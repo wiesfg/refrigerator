@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import './App.css';
 
 const STORAGE_KEY = 'refrigerator_items_v2';
@@ -65,6 +65,15 @@ export default function App() {
   const [filterLocation, setFilterLocation] = useState('전체');
   const [searchTerm, setSearchTerm] = useState('');
 
+  // AI OCR 상태
+  const [isScanModalOpen, setIsScanModalOpen] = useState(false);
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanStatusText, setScanStatusText] = useState('');
+  const [scannedResults, setScannedResults] = useState([]);
+  const [uploadedFileName, setUploadedFileName] = useState('');
+  const [previewImage, setPreviewImage] = useState(null);
+  const fileInputRef = useRef(null);
+
   const [form, setForm] = useState({
     name: '',
     amount: '',
@@ -77,7 +86,6 @@ export default function App() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
   }, [items]);
 
-  // D-Day 계산
   const getDDay = (expiryStr) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -89,7 +97,6 @@ export default function App() {
     return { text: `D-${diffDays}`, isDanger: diffDays <= 3 };
   };
 
-  // 재료 추가
   const handleAddItem = (e) => {
     e.preventDefault();
     if (!form.name.trim() || !form.amount || !form.expiry) {
@@ -109,14 +116,12 @@ export default function App() {
     setForm({ name: '', amount: '', unit: '개', location: '냉장', expiry: '' });
   };
 
-  // 개별 수량 조절 (+ / - 버튼)
   const handleUpdateAmount = (id, delta) => {
     const target = items.find((i) => i.id === id);
     if (!target) return;
 
-    // 단위별 증감 단위 설정 (g, ml는 50 단위, 개/모/봉지는 1 단위)
-    const step = (target.unit === 'g' || target.unit === 'ml') ? 50 : 1;
-    const newAmount = target.amount + (delta * step);
+    const step = target.unit === 'g' || target.unit === 'ml' ? 50 : 1;
+    const newAmount = target.amount + delta * step;
 
     if (newAmount <= 0) {
       if (confirm(`'${target.name}'을(를) 모두 사용하여 목록에서 삭제할까요?`)) {
@@ -125,26 +130,168 @@ export default function App() {
       return;
     }
 
-    setItems(
-      items.map((item) =>
-        item.id === id ? { ...item, amount: newAmount } : item
-      )
-    );
+    setItems(items.map((item) => (item.id === id ? { ...item, amount: newAmount } : item)));
   };
 
-  // 재료 삭제
   const handleDeleteItem = (id) => {
     setItems(items.filter((item) => item.id !== id));
   };
 
-  // 샘플 데이터 복구
   const handleResetData = () => {
     if (confirm('샘플 재료 데이터로 초기화하시겠습니까?')) {
       setItems(DEFAULT_ITEMS);
     }
   };
 
-  // 요리 완성 처리
+  const handleOpenFileDialog = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  };
+
+  // Gemini Vision API 호출 분석 함수
+  const analyzeReceiptWithGemini = async (base64Data, mimeType) => {
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error('API_KEY_MISSING');
+    }
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const prompt = `
+이 이미지는 마트 영수증 또는 식료품 구매 목록입니다.
+이미지에서 구매한 '식재료' 품목만 정확히 추출해 주세요. (공산품, 잡화, 결제정보, 할인내역 등은 제외)
+오늘 날짜는 ${todayStr} 입니다. 각 식재료의 일반적인 유통기한(소비기한)을 추정하여 expiry(YYYY-MM-DD)를 산출해 주세요.
+
+반드시 다른 설명 없이 아래 JSON 배열 형식으로만 응답해 주세요:
+[
+  {
+    "name": "식재료명 (예: 애호박, 두부, 차돌박이)",
+    "amount": 숫자 (수량, 기본값 1),
+    "unit": "개" | "g" | "ml" | "모" | "봉지",
+    "location": "냉장" | "냉동" | "실온",
+    "expiry": "YYYY-MM-DD"
+  }
+]
+`;
+
+    // 기존 URL 수정: gemini-1.5-flash -> gemini-1.5-flash-latest
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                { text: prompt },
+                {
+                  inline_data: {
+                    mime_type: mimeType,
+                    data: base64Data,
+                  },
+                },
+              ],
+            },
+          ],
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const errBody = await response.json().catch(() => ({}));
+      throw new Error(errBody.error?.message || `API 요청 실패 (${response.status})`);
+    }
+
+    const resJson = await response.json();
+    const rawText = resJson.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+    
+    // 마크다운 코드블록 제거 후 JSON 파싱
+    const cleanJsonText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+    return JSON.parse(cleanJsonText);
+  };
+
+  // 파일 선택 및 AI 분석 시작
+  const handleFileChange = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+
+    setUploadedFileName(file.name);
+    setIsScanning(true);
+    setScanStatusText('Gemini AI가 영수증 식재료를 분석 중입니다...');
+    setScannedResults([]);
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const dataUrl = event.target.result;
+      setPreviewImage(dataUrl);
+
+      try {
+        const base64Data = dataUrl.split(',')[1];
+        const mimeType = file.type || 'image/jpeg';
+
+        const parsedItems = await analyzeReceiptWithGemini(base64Data, mimeType);
+
+        if (!Array.isArray(parsedItems) || parsedItems.length === 0) {
+          throw new Error('식재료 항목을 찾지 못했습니다.');
+        }
+
+        const formatted = parsedItems.map((item, idx) => ({
+          id: `ai-${Date.now()}-${idx}`,
+          name: item.name || '식재료',
+          amount: Number(item.amount) || 1,
+          unit: item.unit || '개',
+          location: item.location || '냉장',
+          expiry: item.expiry || new Date().toISOString().split('T')[0],
+          checked: true,
+        }));
+
+        setScannedResults(formatted);
+      } catch (err) {
+        console.error('Gemini Analysis Failed:', err);
+        if (err.message === 'API_KEY_MISSING') {
+          alert('.env 파일에 VITE_GEMINI_API_KEY를 설정해 주세요!');
+        } else {
+          alert(`AI 분석 중 오류가 발생했습니다: ${err.message}`);
+        }
+      } finally {
+        setIsScanning(false);
+        e.target.value = '';
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleEditScannedField = (id, field, value) => {
+    setScannedResults(
+      scannedResults.map((item) => (item.id === id ? { ...item, [field]: value } : item))
+    );
+  };
+
+  const handleToggleCheck = (id) => {
+    setScannedResults(scannedResults.map((r) => (r.id === id ? { ...r, checked: !r.checked } : r)));
+  };
+
+  const handleAddScannedItems = () => {
+    const selected = scannedResults.filter((r) => r.checked);
+    if (selected.length === 0) return alert('추가할 식재료를 최소 하나 선택해주세요.');
+
+    const newEntries = selected.map((r) => ({
+      id: Date.now() + Math.random(),
+      name: r.name.trim(),
+      amount: Number(r.amount) || 1,
+      unit: r.unit,
+      location: r.location,
+      expiry: r.expiry,
+    }));
+
+    setItems([...items, ...newEntries]);
+    setIsScanModalOpen(false);
+    setScannedResults([]);
+    setUploadedFileName('');
+    setPreviewImage(null);
+  };
+
   const handleCookRecipe = (recipe) => {
     const deductInfo = [];
     recipe.ingredients.forEach((reqIng) => {
@@ -163,7 +310,6 @@ export default function App() {
     }
 
     let updated = [...items];
-
     recipe.ingredients.forEach((reqIng) => {
       const targetIdx = updated.findIndex((i) => i.name === reqIng.name);
       if (targetIdx !== -1) {
@@ -173,10 +319,7 @@ export default function App() {
         if (remainAmount <= 0) {
           updated.splice(targetIdx, 1);
         } else {
-          updated[targetIdx] = {
-            ...currentItem,
-            amount: remainAmount,
-          };
+          updated[targetIdx] = { ...currentItem, amount: remainAmount };
         }
       }
     });
@@ -184,7 +327,6 @@ export default function App() {
     setItems(updated);
   };
 
-  // 필터 및 검색
   const filteredItems = items.filter((item) => {
     const matchesLoc = filterLocation === '전체' || item.location === filterLocation;
     const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase());
@@ -195,7 +337,6 @@ export default function App() {
   const urgentCount = items.filter((item) => getDDay(item.expiry).isDanger).length;
   const currentItemNames = items.map((i) => i.name);
 
-  // 레시피 매칭 순위
   const recipeMatches = INITIAL_RECIPES.map((recipe) => {
     const matched = recipe.ingredients.filter((req) => currentItemNames.includes(req.name));
     const rate = Math.round((matched.length / recipe.ingredients.length) * 100);
@@ -209,14 +350,18 @@ export default function App() {
           <div className="brand-title">
             <h1>🧊 Refrigerator</h1>
           </div>
-          <p className="subtext">냉장고 잔여 수량 관리 및 정량 레시피 차감 시스템</p>
+          <p className="subtext">냉장고 잔여 수량 관리 및 AI 영수증 자동 등록 시스템</p>
         </div>
-        <button onClick={handleResetData} className="btn-secondary">
-          🔄 샘플 데이터 리셋
-        </button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button onClick={() => setIsScanModalOpen(true)} className="btn-scan">
+            ✨ AI 영수증 스캔
+          </button>
+          <button onClick={handleResetData} className="btn-secondary">
+            🔄 샘플 데이터 리셋
+          </button>
+        </div>
       </header>
 
-      {/* 상단 통계 */}
       <section className="stats-grid">
         <div className="stat-card">
           <h3>보관 중인 재료 종류</h3>
@@ -233,13 +378,11 @@ export default function App() {
       </section>
 
       <main className="main-grid">
-        {/* 좌측: 재료 관리 */}
         <section className="panel">
           <div className="panel-header">
             <h2>내 냉장고 재료</h2>
           </div>
 
-          {/* 재료 등록 폼 */}
           <form onSubmit={handleAddItem} className="form-box">
             <div className="form-grid-row1">
               <input
@@ -290,7 +433,6 @@ export default function App() {
             </div>
           </form>
 
-          {/* 위치 탭 */}
           <div className="tab-group">
             {['전체', '냉장', '냉동', '실온'].map((loc) => (
               <button
@@ -303,7 +445,6 @@ export default function App() {
             ))}
           </div>
 
-          {/* 검색창 */}
           <input
             type="text"
             className="search-input"
@@ -312,7 +453,6 @@ export default function App() {
             onChange={(e) => setSearchTerm(e.target.value)}
           />
 
-          {/* 재료 리스트 */}
           <div className="item-list">
             {filteredItems.length === 0 ? (
               <div className="empty-state">해당하는 식재료가 없습니다.</div>
@@ -326,7 +466,6 @@ export default function App() {
                       <span className={`badge-loc ${item.location}`}>{item.location}</span>
                     </div>
 
-                    {/* 수량 조절 버튼군 (+ / -) */}
                     <div className="qty-stepper">
                       <button
                         type="button"
@@ -368,7 +507,6 @@ export default function App() {
           </div>
         </section>
 
-        {/* 우측: 레시피 추천 */}
         <section className="panel">
           <div className="panel-header">
             <h2>재료 기반 추천 레시피</h2>
@@ -407,6 +545,186 @@ export default function App() {
           </div>
         </section>
       </main>
+
+      {/* Gemini AI 영수증 모달 */}
+      {isScanModalOpen && (
+        <div
+          className="modal-backdrop"
+          onClick={() => {
+            setIsScanModalOpen(false);
+            setUploadedFileName('');
+            setPreviewImage(null);
+            setScannedResults([]);
+          }}
+        >
+          <div
+            className="modal-content"
+            style={{ maxWidth: '540px' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-header">
+              <h3>✨ AI 영수증 자동 인식</h3>
+              <button
+                className="btn-close"
+                onClick={() => {
+                  setIsScanModalOpen(false);
+                  setUploadedFileName('');
+                  setPreviewImage(null);
+                  setScannedResults([]);
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <input
+              type="file"
+              ref={fileInputRef}
+              style={{ display: 'none' }}
+              accept="image/*"
+              onChange={handleFileChange}
+            />
+
+            {!isScanning && scannedResults.length === 0 && (
+              <div>
+                <div className="dropzone" onClick={handleOpenFileDialog}>
+                  <div className="dropzone-icon">🧾</div>
+                  <p>영수증 사진을 선택하세요</p>
+                  <span>AI 모델이 영수증에서 식재료와 수량을 분석합니다</span>
+                </div>
+                <button
+                  style={{ width: '100%' }}
+                  className="btn-primary"
+                  onClick={handleOpenFileDialog}
+                >
+                  영수증 이미지 선택하기
+                </button>
+              </div>
+            )}
+
+            {isScanning && (
+              <div className="scanning-state">
+                <div className="spinner"></div>
+                <p style={{ fontWeight: 600, color: '#1e293b' }}>
+                  {scanStatusText}
+                </p>
+                <span style={{ fontSize: '12px', color: '#64748b' }}>
+                  [{uploadedFileName}] 이미지를 분석하고 있습니다.
+                </span>
+              </div>
+            )}
+
+            {!isScanning && scannedResults.length > 0 && (
+              <div>
+                {previewImage && (
+                  <div
+                    style={{
+                      textAlign: 'center',
+                      marginBottom: '14px',
+                      background: '#f8fafc',
+                      padding: '8px',
+                      borderRadius: '10px',
+                      border: '1px solid #e2e8f0',
+                    }}
+                  >
+                    <img
+                      src={previewImage}
+                      alt="Uploaded Receipt"
+                      style={{
+                        maxHeight: '130px',
+                        maxWidth: '100%',
+                        objectFit: 'contain',
+                        borderRadius: '6px',
+                      }}
+                    />
+                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
+                      파일명: {uploadedFileName}
+                    </div>
+                  </div>
+                )}
+
+                <p style={{ fontSize: '13px', color: '#475569', fontWeight: 600, marginBottom: '8px' }}>
+                  인식 완료! 식재료 정보를 확인하고 수정 후 등록하세요:
+                </p>
+
+                <div className="scanned-list" style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                  {scannedResults.map((item) => (
+                    <div key={item.id} className="scanned-item-edit">
+                      <input
+                        type="checkbox"
+                        checked={item.checked}
+                        onChange={() => handleToggleCheck(item.id)}
+                        style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                      />
+                      <input
+                        type="text"
+                        value={item.name}
+                        onChange={(e) => handleEditScannedField(item.id, 'name', e.target.value)}
+                        placeholder="품명"
+                        style={{ width: '80px', padding: '4px 6px', fontWeight: 600 }}
+                      />
+                      <input
+                        type="number"
+                        value={item.amount}
+                        onChange={(e) => handleEditScannedField(item.id, 'amount', e.target.value)}
+                        min="1"
+                        style={{ width: '55px', padding: '4px 6px' }}
+                      />
+                      <select
+                        value={item.unit}
+                        onChange={(e) => handleEditScannedField(item.id, 'unit', e.target.value)}
+                        style={{ padding: '4px' }}
+                      >
+                        <option value="개">개</option>
+                        <option value="g">g</option>
+                        <option value="ml">ml</option>
+                        <option value="모">모</option>
+                        <option value="봉지">봉지</option>
+                      </select>
+                      <select
+                        value={item.location}
+                        onChange={(e) => handleEditScannedField(item.id, 'location', e.target.value)}
+                        style={{ padding: '4px' }}
+                      >
+                        <option value="냉장">냉장</option>
+                        <option value="냉동">냉동</option>
+                        <option value="실온">실온</option>
+                      </select>
+                      <input
+                        type="date"
+                        value={item.expiry}
+                        onChange={(e) => handleEditScannedField(item.id, 'expiry', e.target.value)}
+                        style={{ fontSize: '12px', padding: '3px' }}
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                  <button
+                    className="btn-secondary"
+                    style={{ flex: 1 }}
+                    onClick={() => {
+                      setScannedResults([]);
+                      setUploadedFileName('');
+                      setPreviewImage(null);
+                    }}
+                  >
+                    다시 올리기
+                  </button>
+                  <button
+                    className="btn-primary"
+                    style={{ flex: 2 }}
+                    onClick={handleAddScannedItems}
+                  >
+                    선택한 재료 냉장고에 등록
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
