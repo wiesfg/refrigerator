@@ -2,19 +2,71 @@ import { useState, useEffect, useRef } from 'react';
 import './App.css';
 
 const STORAGE_KEY = 'refrigerator_items_v2';
+const RECIPE_STORAGE_KEY = 'refrigerator_recipes_v2';
+// 식약처 레시피 재료 문자열 파서 함수
+function parseRecipeIngredients(rawText) {
+  if (!rawText) return [];
 
+  const rawItems = rawText.split(/,|\n/);
+  const parsed = [];
+  const seen = new Set();
+
+  rawItems.forEach((item) => {
+    let clean = item.replace(/\[.*?\]|\(.*?\)/g, '').trim();
+    clean = clean.replace(/주재료|부재료|양념장|소스/g, '').trim();
+    if (!clean) return;
+
+    const match = clean.match(/^([가-힣a-zA-Z\s]+?)\s*(\d+(?:\/\d+|\.\d+)?)\s*(개|g|ml|모|봉지|줄기|대|토막|쪽)?$/);
+
+    if (match) {
+      const name = match[1].trim();
+      let amount = match[2];
+
+      if (amount.includes('/')) {
+        const [top, bottom] = amount.split('/');
+        amount = Math.round((Number(top) / Number(bottom)) * 10) / 10;
+      } else {
+        amount = Number(amount);
+      }
+
+      if (name && !seen.has(name)) {
+        seen.add(name);
+        parsed.push({
+          name,
+          amount: isNaN(amount) || amount <= 0 ? 1 : amount,
+          unit: match[3] || '개',
+        });
+      }
+    } else {
+      const parts = clean.split(/\s+/);
+      const name = parts[0]?.trim();
+      if (name && name.length >= 2 && !seen.has(name)) {
+        seen.add(name);
+        parsed.push({
+          name,
+          amount: 1,
+          unit: '개',
+        });
+      }
+    }
+  });
+
+  return parsed;
+}
 const DEFAULT_ITEMS = [
   { id: 1, name: '계란', amount: 6, unit: '개', location: '냉장', expiry: '2026-09-20' },
   { id: 2, name: '양파', amount: 3, unit: '개', location: '실온', expiry: '2026-09-28' },
   { id: 3, name: '김치', amount: 300, unit: 'g', location: '냉장', expiry: '2026-10-15' },
   { id: 4, name: '스팸', amount: 200, unit: 'g', location: '실온', expiry: '2026-11-01' },
   { id: 5, name: '대파', amount: 2, unit: '개', location: '냉장', expiry: '2026-09-22' },
+  { id: 6, name: '두부', amount: 1, unit: '모', location: '냉장', expiry: '2026-09-25' },
 ];
 
-const INITIAL_RECIPES = [
+const DEFAULT_RECIPES = [
   {
-    id: 1,
+    id: 'rec-1',
     name: '스팸마요덮밥',
+    calorie: '480 kcal',
     ingredients: [
       { name: '스팸', amount: 100, unit: 'g' },
       { name: '계란', amount: 1, unit: '개' },
@@ -22,32 +74,14 @@ const INITIAL_RECIPES = [
     ],
   },
   {
-    id: 2,
+    id: 'rec-2',
     name: '김치볶음밥',
+    calorie: '520 kcal',
     ingredients: [
       { name: '김치', amount: 150, unit: 'g' },
       { name: '스팸', amount: 100, unit: 'g' },
       { name: '계란', amount: 1, unit: '개' },
       { name: '대파', amount: 1, unit: '개' },
-    ],
-  },
-  {
-    id: 3,
-    name: '양파 계란국',
-    ingredients: [
-      { name: '계란', amount: 2, unit: '개' },
-      { name: '양파', amount: 1, unit: '개' },
-      { name: '대파', amount: 1, unit: '개' },
-    ],
-  },
-  {
-    id: 4,
-    name: '된장찌개',
-    ingredients: [
-      { name: '두부', amount: 1, unit: '모' },
-      { name: '애호박', amount: 1, unit: '개' },
-      { name: '양파', amount: 1, unit: '개' },
-      { name: '차돌박이', amount: 100, unit: 'g' },
     ],
   },
 ];
@@ -62,10 +96,19 @@ export default function App() {
     }
   });
 
+  const [recipes, setRecipes] = useState(() => {
+    try {
+      const saved = localStorage.getItem(RECIPE_STORAGE_KEY);
+      return saved ? JSON.parse(saved) : DEFAULT_RECIPES;
+    } catch {
+      return DEFAULT_RECIPES;
+    }
+  });
+
   const [filterLocation, setFilterLocation] = useState('전체');
   const [searchTerm, setSearchTerm] = useState('');
 
-  // AI OCR 상태
+  // AI 영수증 OCR 상태
   const [isScanModalOpen, setIsScanModalOpen] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [scanStatusText, setScanStatusText] = useState('');
@@ -73,6 +116,17 @@ export default function App() {
   const [uploadedFileName, setUploadedFileName] = useState('');
   const [previewImage, setPreviewImage] = useState(null);
   const fileInputRef = useRef(null);
+
+  // 공공 레시피 검색 모달 상태
+  const [isRecipeSearchOpen, setIsRecipeSearchOpen] = useState(false);
+  const [recipeQuery, setRecipeQuery] = useState('');
+  const [isRecipeLoading, setIsRecipeLoading] = useState(false);
+  const [publicRecipeResults, setPublicRecipeResults] = useState([]);
+
+  // 🔥 내 냉장고 기반 AI 메뉴 추천 모달 상태
+  const [isAiRecommendOpen, setIsAiRecommendOpen] = useState(false);
+  const [isAiRecommending, setIsAiRecommending] = useState(false);
+  const [aiRecommendedRecipes, setAiRecommendedRecipes] = useState([]);
 
   const [form, setForm] = useState({
     name: '',
@@ -85,6 +139,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
   }, [items]);
+
+  useEffect(() => {
+    localStorage.setItem(RECIPE_STORAGE_KEY, JSON.stringify(recipes));
+  }, [recipes]);
 
   const getDDay = (expiryStr) => {
     const today = new Date();
@@ -138,35 +196,28 @@ export default function App() {
   };
 
   const handleResetData = () => {
-    if (confirm('샘플 재료 데이터로 초기화하시겠습니까?')) {
+    if (confirm('기본 샘플 재료 및 레시피 데이터로 초기화하시겠습니까?')) {
       setItems(DEFAULT_ITEMS);
+      setRecipes(DEFAULT_RECIPES);
     }
   };
 
-  const handleOpenFileDialog = () => {
-    if (fileInputRef.current) {
-      fileInputRef.current.click();
-    }
-  };
-
-  // Gemini Vision API 호출 분석 함수
+  // 1. Gemini 영수증 OCR 분석
   const analyzeReceiptWithGemini = async (base64Data, mimeType) => {
     const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-    if (!apiKey) {
-      throw new Error('API_KEY_MISSING');
-    }
+    if (!apiKey) throw new Error('API_KEY_MISSING');
 
     const todayStr = new Date().toISOString().split('T')[0];
     const prompt = `
 이 이미지는 마트 영수증 또는 식료품 구매 목록입니다.
-이미지에서 구매한 '식재료' 품목만 정확히 추출해 주세요. (공산품, 잡화, 결제정보, 할인내역 등은 제외)
-오늘 날짜는 ${todayStr} 입니다. 각 식재료의 일반적인 유통기한(소비기한)을 추정하여 expiry(YYYY-MM-DD)를 산출해 주세요.
+이미지에서 구매한 '식재료' 품목만 정확히 추출해 주세요. (공산품, 잡화, 결제정보 제외)
+오늘 날짜는 ${todayStr} 입니다. 각 식재료의 일반적인 유통기한을 추정하여 expiry(YYYY-MM-DD)를 산출해 주세요.
 
 반드시 다른 설명 없이 아래 JSON 배열 형식으로만 응답해 주세요:
 [
   {
-    "name": "식재료명 (예: 애호박, 두부, 차돌박이)",
-    "amount": 숫자 (수량, 기본값 1),
+    "name": "식재료명",
+    "amount": 숫자,
     "unit": "개" | "g" | "ml" | "모" | "봉지",
     "location": "냉장" | "냉동" | "실온",
     "expiry": "YYYY-MM-DD"
@@ -174,7 +225,6 @@ export default function App() {
 ]
 `;
 
-    // 기존 URL 수정: gemini-1.5-flash -> gemini-1.5-flash-latest
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`,
       {
@@ -205,13 +255,10 @@ export default function App() {
 
     const resJson = await response.json();
     const rawText = resJson.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
-    
-    // 마크다운 코드블록 제거 후 JSON 파싱
     const cleanJsonText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
     return JSON.parse(cleanJsonText);
   };
 
-  // 파일 선택 및 AI 분석 시작
   const handleFileChange = async (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
@@ -229,12 +276,7 @@ export default function App() {
       try {
         const base64Data = dataUrl.split(',')[1];
         const mimeType = file.type || 'image/jpeg';
-
         const parsedItems = await analyzeReceiptWithGemini(base64Data, mimeType);
-
-        if (!Array.isArray(parsedItems) || parsedItems.length === 0) {
-          throw new Error('식재료 항목을 찾지 못했습니다.');
-        }
 
         const formatted = parsedItems.map((item, idx) => ({
           id: `ai-${Date.now()}-${idx}`,
@@ -248,28 +290,14 @@ export default function App() {
 
         setScannedResults(formatted);
       } catch (err) {
-        console.error('Gemini Analysis Failed:', err);
-        if (err.message === 'API_KEY_MISSING') {
-          alert('.env 파일에 VITE_GEMINI_API_KEY를 설정해 주세요!');
-        } else {
-          alert(`AI 분석 중 오류가 발생했습니다: ${err.message}`);
-        }
+        console.error('Gemini Error:', err);
+        alert(`AI 분석 중 오류가 발생했습니다: ${err.message}`);
       } finally {
         setIsScanning(false);
         e.target.value = '';
       }
     };
     reader.readAsDataURL(file);
-  };
-
-  const handleEditScannedField = (id, field, value) => {
-    setScannedResults(
-      scannedResults.map((item) => (item.id === id ? { ...item, [field]: value } : item))
-    );
-  };
-
-  const handleToggleCheck = (id) => {
-    setScannedResults(scannedResults.map((r) => (r.id === id ? { ...r, checked: !r.checked } : r)));
   };
 
   const handleAddScannedItems = () => {
@@ -292,6 +320,151 @@ export default function App() {
     setPreviewImage(null);
   };
 
+  // 🔥 2. Gemini AI에게 현재 냉장고 재료 기반 메뉴 추천 요청
+  const handleRequestAiRecommendations = async () => {
+    if (items.length === 0) {
+      return alert('냉장고에 보관 중인 재료가 없습니다. 재료를 먼저 등록해 주세요!');
+    }
+
+    setIsAiRecommendOpen(true);
+    setIsAiRecommending(true);
+    setAiRecommendedRecipes([]);
+
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    if (!apiKey) {
+      setIsAiRecommending(false);
+      return alert('.env 파일에 VITE_GEMINI_API_KEY를 설정해 주세요!');
+    }
+
+    // 재료 목록 문자열 구성
+    const ingredientListText = items
+      .map((item) => `${item.name}(${item.amount}${item.unit}, 유통기한: ${item.expiry})`)
+      .join(', ');
+
+    const prompt = `
+당신은 최고의 요리사이자 냉장고 털기 전문 셰프입니다.
+현재 내 냉장고에 있는 재료 목록: [ ${ingredientListText} ]
+
+요구사항:
+1. 내 냉장고에 있는 재료들을 최대한 활용하고, 특히 유통기한이 임박한 재료를 우선적으로 소진할 수 있는 현실적인 요리 3가지를 추천해 주세요.
+2. 양념(소금, 설탕, 간장, 고춧가루, 식용유 등 기본 양념)은 집에 있다고 가정해도 좋습니다.
+3. 반드시 다른 텍스트 설명 없이 오직 아래 형식의 JSON 배열(Array)만 출력하세요:
+
+[
+  {
+    "name": "요리 이름 (예: 차돌 두부 된장조림)",
+    "description": "한 줄 요리 소개 및 추천 이유",
+    "calorie": "대략적인 칼로리 (예: 320 kcal)",
+    "ingredients": [
+      { "name": "재료명", "amount": 숫자, "unit": "개" | "g" | "ml" | "모" | "봉지" }
+    ],
+    "manual": [
+      "1단계 조리법",
+      "2단계 조리법",
+      "3단계 조리법"
+    ]
+  }
+]
+`;
+
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`API 요청 실패 (${response.status})`);
+      }
+
+      const resJson = await response.json();
+      const rawText = resJson.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+      const cleanJsonText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+      const parsedRecipes = JSON.parse(cleanJsonText);
+
+      setAiRecommendedRecipes(parsedRecipes);
+    } catch (err) {
+      console.error('AI 추천 실패:', err);
+      alert('AI 요리 추천을 불러오는 중 오류가 발생했습니다: ' + err.message);
+    } finally {
+      setIsAiRecommending(false);
+    }
+  };
+
+  // 공공데이터 레시피 검색
+  const handleSearchPublicRecipe = async (e) => {
+    e?.preventDefault();
+    if (!recipeQuery.trim()) return alert('검색할 요리명을 입력해주세요.');
+
+    setIsRecipeLoading(true);
+    setPublicRecipeResults([]);
+
+    const apiKey = import.meta.env.VITE_RECIPE_API_KEY;
+
+    try {
+      if (apiKey) {
+        const url = `/api/recipe/${apiKey}/COOKRCP01/json/1/10/RCP_NM=${encodeURIComponent(recipeQuery.trim())}`;
+        const res = await fetch(url);
+        const data = await res.json();
+        const rows = data.COOKRCP01?.row;
+
+        if (rows && rows.length > 0) {
+          const parsedList = rows.map((r, idx) => ({
+            id: `gov-${Date.now()}-${idx}`,
+            name: r.RCP_NM,
+            imageUrl: r.ATT_FILE_NO_MAIN || null,
+            calorie: r.INFO_ENG ? `${r.INFO_ENG} kcal` : null,
+            ingredients: parseRecipeIngredients(r.RCP_PARTS_DTLS),
+            manual: [r.MANUAL01, r.MANUAL02, r.MANUAL03].filter(Boolean).map((m) => m.replace(/^[0-9]+\.\s*/, '')),
+          }));
+          setPublicRecipeResults(parsedList);
+          setIsRecipeLoading(false);
+          return;
+        }
+      }
+
+      const fallbackDatabase = [
+        {
+          id: `fb-1`,
+          name: `${recipeQuery} 볶음`,
+          calorie: '340 kcal',
+          ingredients: [
+            { name: recipeQuery, amount: 150, unit: 'g' },
+            { name: '양파', amount: 1, unit: '개' },
+            { name: '대파', amount: 1, unit: '개' },
+          ],
+          manual: ['재료를 한입 크기로 썰어 준비합니다.', '팬에 기름을 두르고 재료를 강불에 볶아줍니다.'],
+        },
+      ];
+      setPublicRecipeResults(fallbackDatabase);
+    } catch (err) {
+      console.error('레시피 검색 오류:', err);
+      alert('레시피 검색 중 오류가 발생했습니다.');
+    } finally {
+      setIsRecipeLoading(false);
+    }
+  };
+
+  // 레시피를 내 추천 목록으로 저장
+  const handleImportRecipe = (recipe) => {
+    if (recipes.some((r) => r.name === recipe.name)) {
+      return alert('이미 등록되어 있는 레시피입니다.');
+    }
+    const newRecipe = {
+      ...recipe,
+      id: `saved-${Date.now()}-${Math.random()}`,
+    };
+    setRecipes([newRecipe, ...recipes]);
+    alert(`[${recipe.name}] 레시피가 내 요리 목록에 추가되었습니다!`);
+  };
+
+  // 요리 완성 및 재료 차감
   const handleCookRecipe = (recipe) => {
     const deductInfo = [];
     recipe.ingredients.forEach((reqIng) => {
@@ -337,9 +510,11 @@ export default function App() {
   const urgentCount = items.filter((item) => getDDay(item.expiry).isDanger).length;
   const currentItemNames = items.map((i) => i.name);
 
-  const recipeMatches = INITIAL_RECIPES.map((recipe) => {
+  const recipeMatches = recipes.map((recipe) => {
     const matched = recipe.ingredients.filter((req) => currentItemNames.includes(req.name));
-    const rate = Math.round((matched.length / recipe.ingredients.length) * 100);
+    const rate = recipe.ingredients.length > 0
+      ? Math.round((matched.length / recipe.ingredients.length) * 100)
+      : 0;
     return { ...recipe, matched, matchRate: rate };
   }).sort((a, b) => b.matchRate - a.matchRate);
 
@@ -350,14 +525,25 @@ export default function App() {
           <div className="brand-title">
             <h1>🧊 Refrigerator</h1>
           </div>
-          <p className="subtext">냉장고 잔여 수량 관리 및 AI 영수증 자동 등록 시스템</p>
+          <p className="subtext">냉장고 재료 소진 & AI 맞춤 요리 추천 시스템</p>
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          {/* 🔥 AI 맞춤 메뉴 추천 버튼 추가 */}
+          <button
+            onClick={handleRequestAiRecommendations}
+            className="btn-primary"
+            style={{ background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)', border: 'none' }}
+          >
+            ✨ AI 냉장고 파먹기 추천
+          </button>
+          <button onClick={() => setIsRecipeSearchOpen(true)} className="btn-secondary" style={{ borderColor: '#3b82f6', color: '#1d4ed8' }}>
+            📖 공공 레시피 검색
+          </button>
           <button onClick={() => setIsScanModalOpen(true)} className="btn-scan">
-            ✨ AI 영수증 스캔
+            📷 영수증 스캔
           </button>
           <button onClick={handleResetData} className="btn-secondary">
-            🔄 샘플 데이터 리셋
+            🔄 리셋
           </button>
         </div>
       </header>
@@ -471,7 +657,6 @@ export default function App() {
                         type="button"
                         className="btn-step btn-minus"
                         onClick={() => handleUpdateAmount(item.id, -1)}
-                        title="수량 감소"
                       >
                         -
                       </button>
@@ -482,7 +667,6 @@ export default function App() {
                         type="button"
                         className="btn-step btn-plus"
                         onClick={() => handleUpdateAmount(item.id, 1)}
-                        title="수량 증가"
                       >
                         +
                       </button>
@@ -495,7 +679,6 @@ export default function App() {
                       <button
                         className="btn-delete"
                         onClick={() => handleDeleteItem(item.id)}
-                        title="삭제"
                       >
                         ✕
                       </button>
@@ -508,19 +691,49 @@ export default function App() {
         </section>
 
         <section className="panel">
-          <div className="panel-header">
-            <h2>재료 기반 추천 레시피</h2>
+          <div className="panel-header" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+            <h2>내 요리 & 추천 레시피 ({recipes.length})</h2>
+            <button
+              onClick={handleRequestAiRecommendations}
+              style={{
+                fontSize: '12px',
+                padding: '5px 10px',
+                background: '#f5f3ff',
+                color: '#6d28d9',
+                border: '1px solid #ddd6fe',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontWeight: 600,
+              }}
+            >
+              ✨ 냉장고 파먹기 추천
+            </button>
           </div>
 
           <div className="item-list">
             {recipeMatches.map((recipe) => (
               <div key={recipe.id} className="recipe-card">
                 <div className="recipe-header">
-                  <span className="recipe-name">{recipe.name}</span>
+                  <div>
+                    <span className="recipe-name">{recipe.name}</span>
+                    {recipe.calorie && (
+                      <span style={{ fontSize: '11px', color: '#64748b', marginLeft: '6px' }}>
+                        ({recipe.calorie})
+                      </span>
+                    )}
+                  </div>
                   <span className={`match-rate ${recipe.matchRate >= 60 ? 'high' : 'low'}`}>
                     매칭 {recipe.matchRate}%
                   </span>
                 </div>
+
+                {recipe.imageUrl && (
+                  <img
+                    src={recipe.imageUrl}
+                    alt={recipe.name}
+                    style={{ width: '100%', maxHeight: '120px', objectFit: 'cover', borderRadius: '8px', margin: '6px 0' }}
+                  />
+                )}
 
                 <div className="ingredient-tags">
                   {recipe.ingredients.map((req) => {
@@ -546,7 +759,169 @@ export default function App() {
         </section>
       </main>
 
-      {/* Gemini AI 영수증 모달 */}
+      {/* 🔥 모달 1: AI 냉장고 맞춤 요리 추천 모달 */}
+      {isAiRecommendOpen && (
+        <div className="modal-backdrop" onClick={() => setIsAiRecommendOpen(false)}>
+          <div className="modal-content" style={{ maxWidth: '640px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>✨ AI 냉장고 파먹기 요리 추천</h3>
+              <button className="btn-close" onClick={() => setIsAiRecommendOpen(false)}>✕</button>
+            </div>
+
+            {isAiRecommending ? (
+              <div className="scanning-state" style={{ padding: '40px 0' }}>
+                <div className="spinner"></div>
+                <p style={{ fontWeight: 600, color: '#1e293b', marginTop: '16px' }}>
+                  현재 보관 중인 재료와 소비기한을 분석 중입니다...
+                </p>
+                <span style={{ fontSize: '13px', color: '#64748b' }}>
+                  식재료 낭비를 줄일 수 있는 최적의 레시피 3가지를 생성하고 있습니다.
+                </span>
+              </div>
+            ) : (
+              <div style={{ maxHeight: '450px', overflowY: 'auto' }}>
+                <p style={{ fontSize: '13px', color: '#475569', marginBottom: '14px', lineHeight: 1.5 }}>
+                  현재 냉장고 재료를 바탕으로 AI 셰프가 제안하는 요리입니다. 마음에 드는 요리를 <strong>내 레시피로 추가</strong>해 보세요!
+                </p>
+
+                {aiRecommendedRecipes.map((item, idx) => (
+                  <div
+                    key={idx}
+                    style={{
+                      border: '1px solid #e2e8f0',
+                      borderRadius: '12px',
+                      padding: '16px',
+                      marginBottom: '12px',
+                      background: '#faf5ff',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <div>
+                        <strong style={{ fontSize: '16px', color: '#581c87' }}>{item.name}</strong>
+                        {item.calorie && (
+                          <span style={{ fontSize: '12px', color: '#7c3aed', marginLeft: '8px', fontWeight: 600 }}>
+                            ⚡ {item.calorie}
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        className="btn-primary"
+                        style={{ fontSize: '12px', padding: '6px 12px', background: '#7c3aed' }}
+                        onClick={() => handleImportRecipe(item)}
+                      >
+                        + 내 레시피로 저장
+                      </button>
+                    </div>
+
+                    <p style={{ fontSize: '13px', color: '#6b21a8', margin: '0 0 10px 0' }}>
+                      💡 {item.description}
+                    </p>
+
+                    <div style={{ fontSize: '12px', color: '#334155', marginBottom: '8px' }}>
+                      <strong>필요 재료:</strong>{' '}
+                      {item.ingredients.map((ing) => `${ing.name} ${ing.amount}${ing.unit}`).join(', ')}
+                    </div>
+
+                    {item.manual && (
+                      <div style={{ fontSize: '12px', color: '#475569', background: '#fff', padding: '10px', borderRadius: '8px', border: '1px solid #f3e8ff' }}>
+                        <strong style={{ color: '#6b21a8' }}>간단 조리 순서:</strong>
+                        <ol style={{ margin: '6px 0 0 18px', padding: 0 }}>
+                          {item.manual.map((step, sIdx) => (
+                            <li key={sIdx} style={{ marginBottom: '4px' }}>{step}</li>
+                          ))}
+                        </ol>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 모달 2: 공공 레시피 검색 모달 */}
+      {isRecipeSearchOpen && (
+        <div className="modal-backdrop" onClick={() => setIsRecipeSearchOpen(false)}>
+          <div className="modal-content" style={{ maxWidth: '620px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>📖 공공데이터 식품안전나라 레시피 검색</h3>
+              <button className="btn-close" onClick={() => setIsRecipeSearchOpen(false)}>✕</button>
+            </div>
+
+            <form onSubmit={handleSearchPublicRecipe} style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
+              <input
+                type="text"
+                value={recipeQuery}
+                onChange={(e) => setRecipeQuery(e.target.value)}
+                placeholder="요리명 검색 (예: 된장찌개, 비빔밥, 불고기)"
+                style={{ flex: 1, padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+              />
+              <button type="submit" className="btn-primary" style={{ padding: '0 18px' }} disabled={isRecipeLoading}>
+                {isRecipeLoading ? '검색 중...' : '검색'}
+              </button>
+            </form>
+
+            <div style={{ maxHeight: '380px', overflowY: 'auto' }}>
+              {publicRecipeResults.length === 0 && !isRecipeLoading && (
+                <div style={{ textAlign: 'center', color: '#64748b', padding: '30px 0' }}>
+                  궁금한 요리명을 검색해 보세요! 식품의약품안전처 조리식품 DB에서 표준 조리법을 찾아옵니다.
+                </div>
+              )}
+
+              {publicRecipeResults.map((item) => (
+                <div
+                  key={item.id}
+                  style={{
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '10px',
+                    padding: '12px',
+                    marginBottom: '10px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px',
+                    background: '#fff',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <strong style={{ fontSize: '15px', color: '#1e293b' }}>{item.name}</strong>
+                      {item.calorie && (
+                        <span style={{ fontSize: '12px', color: '#059669', marginLeft: '8px', fontWeight: 600 }}>
+                          🔥 {item.calorie}
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      className="btn-primary"
+                      style={{ fontSize: '12px', padding: '5px 12px' }}
+                      onClick={() => handleImportRecipe(item)}
+                    >
+                      + 내 레시피로 추가
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                    {item.imageUrl && (
+                      <img
+                        src={item.imageUrl}
+                        alt={item.name}
+                        style={{ width: '80px', height: '80px', objectFit: 'cover', borderRadius: '6px', flexShrink: 0 }}
+                      />
+                    )}
+                    <div style={{ fontSize: '12px', color: '#475569', flex: 1 }}>
+                      <strong>필요 식재료:</strong>{' '}
+                      {item.ingredients.map((ing) => `${ing.name}(${ing.amount}${ing.unit})`).join(', ') || '재료 정보 없음'}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 모달 3: 영수증 스캔 모달 */}
       {isScanModalOpen && (
         <div
           className="modal-backdrop"
@@ -557,11 +932,7 @@ export default function App() {
             setScannedResults([]);
           }}
         >
-          <div
-            className="modal-content"
-            style={{ maxWidth: '540px' }}
-            onClick={(e) => e.stopPropagation()}
-          >
+          <div className="modal-content" style={{ maxWidth: '540px' }} onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>✨ AI 영수증 자동 인식</h3>
               <button
@@ -587,16 +958,12 @@ export default function App() {
 
             {!isScanning && scannedResults.length === 0 && (
               <div>
-                <div className="dropzone" onClick={handleOpenFileDialog}>
+                <div className="dropzone" onClick={() => fileInputRef.current?.click()}>
                   <div className="dropzone-icon">🧾</div>
                   <p>영수증 사진을 선택하세요</p>
-                  <span>AI 모델이 영수증에서 식재료와 수량을 분석합니다</span>
+                  <span>Gemini AI가 영수증에서 식재료와 수량을 분석합니다</span>
                 </div>
-                <button
-                  style={{ width: '100%' }}
-                  className="btn-primary"
-                  onClick={handleOpenFileDialog}
-                >
+                <button style={{ width: '100%' }} className="btn-primary" onClick={() => fileInputRef.current?.click()}>
                   영수증 이미지 선택하기
                 </button>
               </div>
@@ -605,12 +972,8 @@ export default function App() {
             {isScanning && (
               <div className="scanning-state">
                 <div className="spinner"></div>
-                <p style={{ fontWeight: 600, color: '#1e293b' }}>
-                  {scanStatusText}
-                </p>
-                <span style={{ fontSize: '12px', color: '#64748b' }}>
-                  [{uploadedFileName}] 이미지를 분석하고 있습니다.
-                </span>
+                <p style={{ fontWeight: 600, color: '#1e293b' }}>{scanStatusText}</p>
+                <span style={{ fontSize: '12px', color: '#64748b' }}>[{uploadedFileName}] 이미지를 분석하고 있습니다.</span>
               </div>
             )}
 
@@ -630,16 +993,9 @@ export default function App() {
                     <img
                       src={previewImage}
                       alt="Uploaded Receipt"
-                      style={{
-                        maxHeight: '130px',
-                        maxWidth: '100%',
-                        objectFit: 'contain',
-                        borderRadius: '6px',
-                      }}
+                      style={{ maxHeight: '130px', maxWidth: '100%', objectFit: 'contain', borderRadius: '6px' }}
                     />
-                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
-                      파일명: {uploadedFileName}
-                    </div>
+                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>파일명: {uploadedFileName}</div>
                   </div>
                 )}
 
@@ -653,26 +1009,26 @@ export default function App() {
                       <input
                         type="checkbox"
                         checked={item.checked}
-                        onChange={() => handleToggleCheck(item.id)}
+                        onChange={() => setScannedResults(scannedResults.map((r) => (r.id === item.id ? { ...r, checked: !r.checked } : r)))}
                         style={{ width: '18px', height: '18px', cursor: 'pointer' }}
                       />
                       <input
                         type="text"
                         value={item.name}
-                        onChange={(e) => handleEditScannedField(item.id, 'name', e.target.value)}
+                        onChange={(e) => setScannedResults(scannedResults.map((r) => (r.id === item.id ? { ...r, name: e.target.value } : r)))}
                         placeholder="품명"
                         style={{ width: '80px', padding: '4px 6px', fontWeight: 600 }}
                       />
                       <input
                         type="number"
                         value={item.amount}
-                        onChange={(e) => handleEditScannedField(item.id, 'amount', e.target.value)}
+                        onChange={(e) => setScannedResults(scannedResults.map((r) => (r.id === item.id ? { ...r, amount: e.target.value } : r)))}
                         min="1"
                         style={{ width: '55px', padding: '4px 6px' }}
                       />
                       <select
                         value={item.unit}
-                        onChange={(e) => handleEditScannedField(item.id, 'unit', e.target.value)}
+                        onChange={(e) => setScannedResults(scannedResults.map((r) => (r.id === item.id ? { ...r, unit: e.target.value } : r)))}
                         style={{ padding: '4px' }}
                       >
                         <option value="개">개</option>
@@ -683,7 +1039,7 @@ export default function App() {
                       </select>
                       <select
                         value={item.location}
-                        onChange={(e) => handleEditScannedField(item.id, 'location', e.target.value)}
+                        onChange={(e) => setScannedResults(scannedResults.map((r) => (r.id === item.id ? { ...r, location: e.target.value } : r)))}
                         style={{ padding: '4px' }}
                       >
                         <option value="냉장">냉장</option>
@@ -693,7 +1049,7 @@ export default function App() {
                       <input
                         type="date"
                         value={item.expiry}
-                        onChange={(e) => handleEditScannedField(item.id, 'expiry', e.target.value)}
+                        onChange={(e) => setScannedResults(scannedResults.map((r) => (r.id === item.id ? { ...r, expiry: e.target.value } : r)))}
                         style={{ fontSize: '12px', padding: '3px' }}
                       />
                     </div>
@@ -712,11 +1068,7 @@ export default function App() {
                   >
                     다시 올리기
                   </button>
-                  <button
-                    className="btn-primary"
-                    style={{ flex: 2 }}
-                    onClick={handleAddScannedItems}
-                  >
+                  <button className="btn-primary" style={{ flex: 2 }} onClick={handleAddScannedItems}>
                     선택한 재료 냉장고에 등록
                   </button>
                 </div>
