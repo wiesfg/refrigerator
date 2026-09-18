@@ -1007,6 +1007,50 @@ input, select, .btn-primary {
   height: 44px;
 }
 
+.chat-menu-options {
+  width: 100%;
+}
+
+.chat-menu-options > p {
+  margin: 0 0 12px;
+  color: #f8f7f2;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.chat-menu-checkboxes {
+  display: grid;
+  gap: 8px;
+}
+
+.chat-menu-checkboxes label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid #555659;
+  border-radius: 11px;
+  background: #343537;
+  color: #eeeae2;
+  cursor: pointer;
+}
+
+.chat-menu-checkboxes label:has(input:checked) {
+  border-color: #46b8e9;
+  background: #214653;
+}
+
+.chat-menu-checkboxes input {
+  width: 18px;
+  height: 18px;
+  accent-color: #34b9d5;
+}
+
+.menu-confirm-button {
+  width: 100%;
+  margin-top: 12px;
+}
+
 .main-grid {
   max-width: 1160px;
   margin: 0 auto;
