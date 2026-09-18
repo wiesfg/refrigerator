@@ -58,4 +58,16 @@ Content-Type: application/json
 }
 ```
 
-The LLM calls are currently mocked inside `ChatService`. Replace the methods marked with `TODO: LLM 호출` when connecting a real model.
+If `JBNU_LLM_API_KEY` is not set, the app falls back to local mock recommendations.
+
+## JBNU LLM Setup
+
+The backend calls an OpenAI-compatible chat completions API. Keep the API key in an environment variable, not in source code.
+
+```bash
+export JBNU_LLM_BASE_URL="https://factchat-cloud.mindlogic.ai/v1/gateway"
+export JBNU_LLM_MODEL="claude-sonnet-5"
+export JBNU_LLM_API_KEY="your-api-key"
+
+mvn spring-boot:run
+```

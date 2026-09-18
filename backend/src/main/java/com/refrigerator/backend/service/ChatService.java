@@ -23,10 +23,16 @@ public class ChatService {
 
     private final UserRepository userRepository;
     private final UserPreferenceRepository userPreferenceRepository;
+    private final LlmClient llmClient;
 
-    public ChatService(UserRepository userRepository, UserPreferenceRepository userPreferenceRepository) {
+    public ChatService(
+            UserRepository userRepository,
+            UserPreferenceRepository userPreferenceRepository,
+            LlmClient llmClient
+    ) {
         this.userRepository = userRepository;
         this.userPreferenceRepository = userPreferenceRepository;
+        this.llmClient = llmClient;
     }
 
     @Transactional
@@ -79,7 +85,11 @@ public class ChatService {
     }
 
     private PreferenceExtractionResult extractPreferencesWithLlm(String message) {
-        // TODO: LLM 호출
+        return llmClient.extractPreferences(message)
+                .orElseGet(() -> extractPreferencesWithMock(message));
+    }
+
+    private PreferenceExtractionResult extractPreferencesWithMock(String message) {
         String lowerMessage = message.toLowerCase(Locale.ROOT);
 
         String dietType = containsAny(lowerMessage, "다이어트", "저칼로리", "살빼", "diet")
@@ -108,7 +118,11 @@ public class ChatService {
     }
 
     private MenuRecommendationResult recommendMenuWithLlm(UserPreference preference, List<String> ingredients) {
-        // TODO: LLM 호출
+        return llmClient.recommendMenu(preference, ingredients)
+                .orElseGet(() -> recommendMenuWithMock(preference, ingredients));
+    }
+
+    private MenuRecommendationResult recommendMenuWithMock(UserPreference preference, List<String> ingredients) {
         String joinedIngredients = ingredients.isEmpty() ? "현재 입력한 재료" : String.join(", ", ingredients);
 
         if ("다이어트".equals(preference.getDietType()) || "고단백".equals(preference.getHealthGoal())) {

@@ -20,3 +20,8 @@ spring:
       hibernate:
         format_sql: true
     show-sql: true
+
+llm:
+  base-url: ${JBNU_LLM_BASE_URL:https://factchat-cloud.mindlogic.ai/v1/gateway}
+  api-key: ${JBNU_LLM_API_KEY:}
+  model: ${JBNU_LLM_MODEL:claude-sonnet-5}
