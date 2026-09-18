@@ -10,6 +10,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import com.refrigerator.backend.repository.UserPreferenceRepository;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -17,6 +18,9 @@ class ChatControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private UserPreferenceRepository userPreferenceRepository;
 
     @Test
     void chatExtractsPreferenceAndReturnsMenuRecommendation() throws Exception {
@@ -58,6 +62,11 @@ class ChatControllerTest {
                 .andExpect(jsonPath("$.options[1].menu_name").isString())
                 .andExpect(jsonPath("$.options[2].menu_name").isString())
                 .andExpect(jsonPath("$.options[3].menu_name").isString());
+
+        org.junit.jupiter.api.Assertions.assertTrue(userPreferenceRepository.findAll().stream()
+                .anyMatch(preference -> "돼지고기는 먹지 않아요.".equals(preference.getReligiousRestriction())
+                        && "채식주의자는 아니에요.".equals(preference.getVegetarianType())
+                        && "매콤한 한식이 먹고 싶어요.".equals(preference.getPreferredCuisine())));
     }
 
     @Test
