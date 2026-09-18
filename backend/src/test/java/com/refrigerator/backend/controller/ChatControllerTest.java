@@ -59,4 +59,27 @@ class ChatControllerTest {
                 .andExpect(jsonPath("$.options[2].menu_name").isString())
                 .andExpect(jsonPath("$.options[3].menu_name").isString());
     }
+
+    @Test
+    void inventoryCanBeAddedAndListedForRecommendations() throws Exception {
+        String item = """
+                {
+                  "name": "두부",
+                  "amount": 1,
+                  "unit": "모",
+                  "location": "냉장",
+                  "expiry": "2099-12-31"
+                }
+                """;
+
+        mockMvc.perform(post("/api/inventory")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(item))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.name").value("두부"));
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/inventory"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].name").value("두부"));
+    }
 }

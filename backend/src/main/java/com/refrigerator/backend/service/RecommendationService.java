@@ -3,6 +3,10 @@ package com.refrigerator.backend.service;
 import com.refrigerator.backend.dto.MenuOption;
 import com.refrigerator.backend.dto.RecommendationRequest;
 import com.refrigerator.backend.dto.RecommendationResponse;
+import com.refrigerator.backend.repository.InventoryItemRepository;
+import com.refrigerator.backend.repository.UserRepository;
+import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -10,19 +14,52 @@ import org.springframework.util.StringUtils;
 @Service
 public class RecommendationService {
 
+    private final InventoryItemRepository inventoryItemRepository;
+    private final UserRepository userRepository;
+
+    public RecommendationService(
+            InventoryItemRepository inventoryItemRepository,
+            UserRepository userRepository
+    ) {
+        this.inventoryItemRepository = inventoryItemRepository;
+        this.userRepository = userRepository;
+    }
+
     public RecommendationResponse recommend(RecommendationRequest request) {
         validate(request);
 
-        // TODO: Replace this mock result with inventory lookup and LLM call.
+        List<String> inventory = resolveInventory(request);
+        // TODO: Pass this inventory snapshot to the LLM in the next commit.
+        String firstMenu = inventory.stream().anyMatch("두부"::equals)
+                ? "두부 된장찌개"
+                : "김치볶음밥";
+
         return new RecommendationResponse(
                 "menu_options",
                 List.of(
-                        new MenuOption("김치볶음밥"),
-                        new MenuOption("두부 된장찌개"),
+                        new MenuOption(firstMenu),
+                        new MenuOption(firstMenu.equals("김치볶음밥") ? "두부 된장찌개" : "김치볶음밥"),
                         new MenuOption("계란 채소볶음"),
                         new MenuOption("닭가슴살 덮밥")
                 )
         );
+    }
+
+    private List<String> resolveInventory(RecommendationRequest request) {
+        List<String> inventory = new ArrayList<>();
+        userRepository.findById(request.userId() == null ? 0L : request.userId())
+                .or(() -> request.userId() == null ? userRepository.findAll().stream().findFirst() : java.util.Optional.empty())
+                .ifPresent(user -> inventory.addAll(
+                        inventoryItemRepository
+                                .findByUserIdAndExpiryGreaterThanEqualOrderByExpiryAsc(user.getId(), LocalDate.now())
+                                .stream()
+                                .map(item -> item.getName())
+                                .toList()
+                ));
+        if (inventory.isEmpty() && request.ingredients() != null) {
+            inventory.addAll(request.ingredients());
+        }
+        return inventory;
     }
 
     private void validate(RecommendationRequest request) {
