@@ -168,4 +168,26 @@ class ChatControllerTest {
                         .content(body))
                 .andExpect(status().isConflict());
     }
+
+    @Test
+    void selectedMenuCanBeSavedAndListed() throws Exception {
+        User user = userRepository.save(new User("saved-menu-user"));
+        String body = """
+                {
+                  "userId": %d,
+                  "menuName": "두부 된장찌개"
+                }
+                """.formatted(user.getId());
+
+        mockMvc.perform(post("/api/saved-menus")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.menu_name").value("두부 된장찌개"));
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/saved-menus")
+                        .param("userId", user.getId().toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].menu_name").value("두부 된장찌개"));
+    }
 }

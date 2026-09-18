@@ -55,8 +55,8 @@ public class RecommendationService {
             );
         }
         return llmClient.recommendMenus(effectiveRequest, inventory)
-                .map(options -> new RecommendationResponse("menu_options", options))
-                .orElseGet(() -> mockRecommendation(inventory, effectiveRequest.ingredients()));
+                .map(options -> new RecommendationResponse(user.getId(), "menu_options", options))
+                .orElseGet(() -> mockRecommendation(user.getId(), inventory, effectiveRequest.ingredients()));
     }
 
     private void saveGuidedAnswers(UserPreference preference, RecommendationRequest request) {
@@ -92,7 +92,7 @@ public class RecommendationService {
         return StringUtils.hasText(current) ? current.trim() : saved;
     }
 
-    private RecommendationResponse mockRecommendation(List<InventoryItem> inventory, List<String> requestedIngredients) {
+    private RecommendationResponse mockRecommendation(Long userId, List<InventoryItem> inventory, List<String> requestedIngredients) {
         List<String> names = inventory.stream().map(InventoryItem::getName).toList();
         if (names.isEmpty() && requestedIngredients != null) {
             names = requestedIngredients;
@@ -102,6 +102,7 @@ public class RecommendationService {
                 : "김치볶음밥";
 
         return new RecommendationResponse(
+                userId,
                 "menu_options",
                 List.of(
                         new MenuOption(firstMenu),

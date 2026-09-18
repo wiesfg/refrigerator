@@ -19,3 +19,8 @@ export async function requestRecommendations({ userId, answers, ingredients }) {
 
   return response.data;
 }
+
+export async function saveMenu({ userId, menuName }) {
+  const response = await axios.post('/api/saved-menus', { userId, menuName });
+  return response.data;
+}

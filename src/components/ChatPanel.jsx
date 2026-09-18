@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { requestRecommendations } from '../api/chatApi';
+import { requestRecommendations, saveMenu } from '../api/chatApi';
 
 const QUESTIONS = [
   {
@@ -33,6 +33,7 @@ export default function ChatPanel({ ingredients }) {
   const [errorMessage, setErrorMessage] = useState('');
   const [selectedMenus, setSelectedMenus] = useState({});
   const [confirmedMenus, setConfirmedMenus] = useState({});
+  const [isSavingSelection, setIsSavingSelection] = useState(false);
 
   const toggleMenu = (messageId, menuName) => {
     setSelectedMenus((current) => {
@@ -44,16 +45,25 @@ export default function ChatPanel({ ingredients }) {
     });
   };
 
-  const confirmMenus = (message) => {
+  const confirmMenus = async (message) => {
     const selected = selectedMenus[message.id] ?? [];
-    if (selected.length === 0 || confirmedMenus[message.id]) return;
+    if (selected.length === 0 || confirmedMenus[message.id] || isSavingSelection) return;
 
-    setConfirmedMenus((current) => ({ ...current, [message.id]: true }));
-    setMessages((current) => [
-      ...current,
-      { id: Date.now(), role: 'user', text: `선택한 메뉴: ${selected.join(', ')}` },
-      { id: Date.now() + 1, role: 'assistant', text: '선택한 메뉴를 확인했어요. 맛있게 드세요!' },
-    ]);
+    setIsSavingSelection(true);
+    setErrorMessage('');
+    try {
+      await Promise.all(selected.map((menuName) => saveMenu({ userId, menuName })));
+      setConfirmedMenus((current) => ({ ...current, [message.id]: true }));
+      setMessages((current) => [
+        ...current,
+        { id: Date.now(), role: 'user', text: `선택한 메뉴: ${selected.join(', ')}` },
+        { id: Date.now() + 1, role: 'assistant', text: '선택한 메뉴를 저장했어요. 맛있게 드세요!' },
+      ]);
+    } catch {
+      setErrorMessage('메뉴 저장에 실패했어요. Spring Boot 서버가 실행 중인지 확인해 주세요.');
+    } finally {
+      setIsSavingSelection(false);
+    }
   };
 
   const handleSubmit = async (event) => {
@@ -92,7 +102,7 @@ export default function ChatPanel({ ingredients }) {
         ingredients,
       });
 
-      setUserId(result.userId ?? userId);
+      setUserId(result.user_id ?? result.userId ?? userId);
       setMessages((current) => [
         ...current,
         { id: Date.now() + 1, role: 'assistant', options: result.options ?? [] },
@@ -150,10 +160,14 @@ export default function ChatPanel({ ingredients }) {
                 <button
                   type="button"
                   className="btn-primary menu-confirm-button"
-                  disabled={confirmedMenus[message.id] || !(selectedMenus[message.id] ?? []).length}
+                  disabled={confirmedMenus[message.id]
+                    || isSavingSelection
+                    || !(selectedMenus[message.id] ?? []).length}
                   onClick={() => confirmMenus(message)}
                 >
-                  {confirmedMenus[message.id] ? '선택 완료' : '선택한 메뉴 확인'}
+                  {confirmedMenus[message.id]
+                    ? '저장 완료'
+                    : isSavingSelection ? '저장 중...' : '선택한 메뉴 저장'}
                 </button>
               </div>
             ) : (
