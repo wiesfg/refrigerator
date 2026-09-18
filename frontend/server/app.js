@@ -112,7 +112,10 @@ export function createApiServer({ db, env = process.env, fetchImpl = fetch }) {
 
       if (path === '/api/ai/receipt' && method === 'POST') {
         const items = await analyzeReceipt(await readJson(request), {
-          apiKey: env.GEMINI_API_KEY, model: env.GEMINI_MODEL, fetchImpl,
+          apiKey: env.JBNU_LLM_API_KEY,
+          baseUrl: env.JBNU_LLM_BASE_URL,
+          model: env.JBNU_LLM_MODEL,
+          fetchImpl,
         });
         return send(response, 200, items);
       }

@@ -7,6 +7,11 @@ const db = openDatabase(':memory:');
 const calls = [];
 const fetchImpl = async (url, options) => {
   calls.push({ url, options });
+  if (url.includes('factchat-cloud.mindlogic.ai')) {
+    return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify([
+      { name: '우유', amount: 1, unit: '개', location: '냉장', expiry: '2026-09-22' },
+    ]) } }] }), { status: 200 });
+  }
   if (url.includes('generativelanguage.googleapis.com')) {
     const isReceipt = JSON.stringify(options.body).includes('inline_data');
     const result = isReceipt
@@ -16,7 +21,11 @@ const fetchImpl = async (url, options) => {
   }
   return new Response(JSON.stringify({ COOKRCP01: { row: [{ RCP_SEQ: '1', RCP_NM: '계란국', RCP_PARTS_DTLS: '계란 2개, 양파 1/2개', MANUAL01: '1. 끓인다' }] } }), { status: 200 });
 };
-const server = createApiServer({ db, env: { GEMINI_API_KEY: 'test-key', RECIPE_API_KEY: 'test-key' }, fetchImpl });
+const server = createApiServer({
+  db,
+  env: { JBNU_LLM_API_KEY: 'test-key', GEMINI_API_KEY: 'test-key', RECIPE_API_KEY: 'test-key' },
+  fetchImpl,
+});
 let base;
 
 before(async () => {
@@ -82,6 +91,6 @@ test('AI and public data adapters preserve frontend field shapes without exposin
   const publicRecipes = await request('/api/recipes/search?q=계란국');
   assert.equal(publicRecipes.status, 200);
   assert.equal(publicRecipes.body[0].ingredients[1].amount, 0.5);
-  assert.ok(calls.some(({ options }) => options?.headers?.['x-goog-api-key'] === 'test-key'));
+  assert.ok(calls.some(({ options }) => options?.headers?.Authorization === 'Bearer test-key'));
   assert.ok(!JSON.stringify(scanned.body).includes('test-key'));
 });
