@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import ChatPanel from './components/ChatPanel';
 import './App.css';
 
 const STORAGE_KEY = 'refrigerator_items_v2';
@@ -231,6 +232,8 @@ export default function App() {
           <div className="value">{recipeMatches.filter((r) => r.matchRate >= 50).length}개</div>
         </div>
       </section>
+
+      <ChatPanel ingredients={currentItemNames} />
 
       <main className="main-grid">
         {/* 좌측: 재료 관리 */}
