@@ -1,6 +1,8 @@
 package com.refrigerator.backend.controller;
 
 import com.refrigerator.backend.dto.RecommendationRequest;
+import com.refrigerator.backend.dto.MenuRecipeRequest;
+import com.refrigerator.backend.dto.MenuRecipeResponse;
 import com.refrigerator.backend.dto.RecommendationResponse;
 import com.refrigerator.backend.service.RecommendationService;
 import org.springframework.http.ResponseEntity;
@@ -24,5 +26,10 @@ public class RecommendationController {
             @RequestBody RecommendationRequest request
     ) {
         return ResponseEntity.ok(recommendationService.recommend(request));
+    }
+
+    @PostMapping("/recipe")
+    public MenuRecipeResponse recipe(@RequestBody MenuRecipeRequest request) {
+        return recommendationService.recipe(request);
     }
 }

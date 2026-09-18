@@ -60,6 +60,51 @@ Content-Type: application/json
 
 If `JBNU_LLM_API_KEY` is not set, the app falls back to local mock recommendations.
 
+## Guided menu conversation
+
+The React chat asks three questions, then calls `POST /api/recommendations`
+with `religiousAnswer`, `vegetarianAnswer`, `cuisineAnswer`, and `ingredients`.
+Keep the returned `user_id` for subsequent requests.
+
+For another set of four menus, send the same answers and `userId`, plus:
+
+```json
+{
+  "message": "다른 메뉴 4개 추천해줘. 이번에는 국물 요리로",
+  "excludedMenus": ["두부구이", "채소비빔밥", "버섯볶음", "양파국"]
+}
+```
+
+`excludedMenus` contains all menus shown earlier in the conversation. The backend
+rejects duplicate or previously suggested names and retries the LLM once.
+
+After selecting one menu, the frontend saves it with `POST /api/saved-menus`,
+then requests a detailed recipe:
+
+```http
+POST /api/recommendations/recipe
+Content-Type: application/json
+```
+
+```json
+{
+  "userId": 1,
+  "menuName": "두부구이",
+  "ingredients": ["두부", "양파"],
+  "message": "간단한 요리로 부탁해"
+}
+```
+
+The response contains `menu_name` and `steps` (10–15 detailed Korean instructions).
+Each step is displayed as a separate numbered list item. The prompt covers ingredient
+quantities, preparation, heat levels, approximate cooking times and signs of doneness.
+Recipe generation uses the saved dietary restrictions and current ingredients.
+It requires the Spring Boot process to have `JBNU_LLM_API_KEY` configured;
+the scan server's environment settings do not configure Spring Boot automatically.
+Recipes and follow-up recommendations never fall back to mock results on failure.
+If recipe generation fails after saving, the menu remains saved and the user can
+retry the same selection. The chat input remains available after each selection.
+
 ## JBNU LLM Setup
 
 The backend calls an OpenAI-compatible chat completions API. Keep the API key in an environment variable, not in source code.

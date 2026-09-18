@@ -10,13 +10,20 @@ export async function sendChatMessage({ userId, message, ingredients }) {
   return response.data;
 }
 
-export async function requestRecommendations({ userId, answers, ingredients }) {
+export async function requestRecommendations({ userId, answers, ingredients, message, excludedMenus }) {
   const response = await axios.post('/api/recommendations', {
     userId,
     ...answers,
     ingredients,
+    message,
+    excludedMenus,
   });
 
+  return response.data;
+}
+
+export async function requestMenuRecipe({ userId, menuName, ingredients, message }) {
+  const response = await axios.post('/api/recommendations/recipe', { userId, menuName, ingredients, message });
   return response.data;
 }
 

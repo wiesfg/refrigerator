@@ -4,6 +4,8 @@ import com.refrigerator.backend.domain.InventoryItem;
 import com.refrigerator.backend.domain.User;
 import com.refrigerator.backend.domain.UserPreference;
 import com.refrigerator.backend.dto.MenuOption;
+import com.refrigerator.backend.dto.MenuRecipeRequest;
+import com.refrigerator.backend.dto.MenuRecipeResponse;
 import com.refrigerator.backend.dto.RecommendationRequest;
 import com.refrigerator.backend.dto.RecommendationResponse;
 import com.refrigerator.backend.repository.InventoryItemRepository;
@@ -56,7 +58,31 @@ public class RecommendationService {
         }
         return llmClient.recommendMenus(effectiveRequest, inventory)
                 .map(options -> new RecommendationResponse(user.getId(), "menu_options", options))
-                .orElseGet(() -> mockRecommendation(user.getId(), inventory, effectiveRequest.ingredients()));
+                .orElseGet(() -> {
+                    if (llmClient.isConfigured() || StringUtils.hasText(request.message())
+                            || (request.excludedMenus() != null && !request.excludedMenus().isEmpty())) {
+                        throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+                                "새 메뉴를 추천하지 못했습니다. 전북대 LLM 연결을 확인하고 다시 시도해 주세요.");
+                    }
+                    return mockRecommendation(user.getId(), inventory, effectiveRequest.ingredients());
+                });
+    }
+
+    @Transactional(readOnly = true)
+    public MenuRecipeResponse recipe(MenuRecipeRequest request) {
+        if (request == null || request.userId() == null || !StringUtils.hasText(request.menuName())
+                || request.menuName().length() > 120) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "사용자와 선택한 메뉴가 필요합니다.");
+        }
+        if (!llmClient.isConfigured()) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "전북대 LLM 키를 설정해 주세요.");
+        }
+        User user = findOrCreateUser(request.userId());
+        UserPreference preference = userPreferenceRepository.findByUserId(user.getId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "먼저 세 가지 질문에 답해 주세요."));
+        return llmClient.explainRecipe(request, preference, resolveInventory(user))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+                        "조리법을 가져오지 못했습니다. 다시 시도해 주세요."));
     }
 
     private void saveGuidedAnswers(UserPreference preference, RecommendationRequest request) {
@@ -85,7 +111,8 @@ public class RecommendationService {
                     "religiousAnswer, vegetarianAnswer, and cuisineAnswer are required for the first recommendation"
             );
         }
-        return new RecommendationRequest(request.userId(), religious, vegetarian, cuisine, request.ingredients());
+        return new RecommendationRequest(request.userId(), religious, vegetarian, cuisine, request.ingredients(),
+                request.message(), request.excludedMenus());
     }
 
     private String chooseAnswer(String current, String saved) {

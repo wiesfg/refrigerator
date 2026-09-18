@@ -13,6 +13,8 @@ public record RecommendationRequest(
         String religiousAnswer,
         String vegetarianAnswer,
         String cuisineAnswer,
-        List<String> ingredients
+        List<String> ingredients,
+        String message,
+        List<String> excludedMenus
 ) {
 }
