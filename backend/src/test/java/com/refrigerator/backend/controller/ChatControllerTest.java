@@ -76,15 +76,17 @@ class ChatControllerTest {
 
     @Test
     void inventoryCanBeAddedAndListedForRecommendations() throws Exception {
+        User user = userRepository.save(new User("inventory-test-user"));
         String item = """
                 {
+                  "userId": %d,
                   "name": "두부",
                   "amount": 1,
                   "unit": "모",
                   "location": "냉장",
                   "expiry": "2099-12-31"
                 }
-                """;
+                """.formatted(user.getId());
 
         mockMvc.perform(post("/api/inventory")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -92,7 +94,8 @@ class ChatControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.name").value("두부"));
 
-        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/inventory"))
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/inventory")
+                        .param("userId", user.getId().toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].name").value("두부"));
     }
@@ -100,6 +103,21 @@ class ChatControllerTest {
     @Test
     void recommendationReusesSavedAnswersWhenLaterAnswersAreOmitted() throws Exception {
         User user = userRepository.save(new User("memory-test-user"));
+        String inventory = """
+                {
+                  "userId": %d,
+                  "name": "계란",
+                  "amount": 2,
+                  "unit": "개",
+                  "location": "냉장",
+                  "expiry": "2099-12-31"
+                }
+                """.formatted(user.getId());
+        mockMvc.perform(post("/api/inventory")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(inventory))
+                .andExpect(status().isCreated());
+
         String firstRequest = """
                 {
                   "userId": %d,
@@ -131,5 +149,23 @@ class ChatControllerTest {
                 "중식이 먹고 싶어요.",
                 userPreferenceRepository.findByUserId(user.getId()).orElseThrow().getPreferredCuisine()
         );
+    }
+
+    @Test
+    void recommendationRejectsUserWithoutInventory() throws Exception {
+        User user = userRepository.save(new User("empty-inventory-user"));
+        String body = """
+                {
+                  "userId": %d,
+                  "religiousAnswer": "없어요.",
+                  "vegetarianAnswer": "일반식이에요.",
+                  "cuisineAnswer": "한식이 좋아요."
+                }
+                """.formatted(user.getId());
+
+        mockMvc.perform(post("/api/recommendations")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isConflict());
     }
 }

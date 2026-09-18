@@ -11,9 +11,11 @@ import com.refrigerator.backend.repository.UserRepository;
 import com.refrigerator.backend.repository.UserPreferenceRepository;
 import java.time.LocalDate;
 import java.util.List;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class RecommendationService {
@@ -46,6 +48,12 @@ public class RecommendationService {
         RecommendationRequest effectiveRequest = mergeWithSavedAnswers(request, preference);
         saveGuidedAnswers(preference, effectiveRequest);
         List<InventoryItem> inventory = resolveInventory(user);
+        if (inventory.isEmpty() && (request.ingredients() == null || request.ingredients().isEmpty())) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "추천하려면 소비기한이 지나지 않은 냉장고 재료가 필요합니다."
+            );
+        }
         return llmClient.recommendMenus(effectiveRequest, inventory)
                 .map(options -> new RecommendationResponse("menu_options", options))
                 .orElseGet(() -> mockRecommendation(inventory, effectiveRequest.ingredients()));
