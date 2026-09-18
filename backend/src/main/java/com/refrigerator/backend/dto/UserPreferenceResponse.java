@@ -12,7 +12,13 @@ public record UserPreferenceResponse(
         @JsonProperty("disliked_ingredients")
         String dislikedIngredients,
         @JsonProperty("health_goal")
-        String healthGoal
+        String healthGoal,
+        @JsonProperty("religious_restriction")
+        String religiousRestriction,
+        @JsonProperty("vegetarian_type")
+        String vegetarianType,
+        @JsonProperty("preferred_cuisine")
+        String preferredCuisine
 ) {
 
     public static UserPreferenceResponse from(UserPreference preference) {
@@ -21,7 +27,10 @@ public record UserPreferenceResponse(
                 preference.getAllergies(),
                 preference.getPreferredTaste(),
                 preference.getDislikedIngredients(),
-                preference.getHealthGoal()
+                preference.getHealthGoal(),
+                preference.getReligiousRestriction(),
+                preference.getVegetarianType(),
+                preference.getPreferredCuisine()
         );
     }
 }

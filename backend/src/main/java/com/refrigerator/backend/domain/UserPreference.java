@@ -38,6 +38,15 @@ public class UserPreference {
     @Column(length = 120)
     private String healthGoal;
 
+    @Column(length = 255)
+    private String religiousRestriction;
+
+    @Column(length = 255)
+    private String vegetarianType;
+
+    @Column(length = 255)
+    private String preferredCuisine;
+
     @Column(nullable = false)
     private LocalDateTime updatedAt;
 
@@ -77,6 +86,10 @@ public class UserPreference {
         return healthGoal;
     }
 
+    public String getReligiousRestriction() { return religiousRestriction; }
+    public String getVegetarianType() { return vegetarianType; }
+    public String getPreferredCuisine() { return preferredCuisine; }
+
     public LocalDateTime getUpdatedAt() {
         return updatedAt;
     }
@@ -97,6 +110,17 @@ public class UserPreference {
         this.preferredTaste = preferredTaste;
         this.dislikedIngredients = dislikedIngredients;
         this.healthGoal = healthGoal;
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    public void updateGuidedAnswers(
+            String religiousRestriction,
+            String vegetarianType,
+            String preferredCuisine
+    ) {
+        this.religiousRestriction = religiousRestriction;
+        this.vegetarianType = vegetarianType;
+        this.preferredCuisine = preferredCuisine;
         this.updatedAt = LocalDateTime.now();
     }
 }
