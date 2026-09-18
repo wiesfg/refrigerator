@@ -208,4 +208,33 @@ class ChatControllerTest {
         mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/saved-menus/{id}", id))
                 .andExpect(status().isNoContent());
     }
+
+    @Test
+    void cookingDeductsInventoryFromTheEarliestExpiryBatch() throws Exception {
+        User user = userRepository.save(new User("cook-inventory-user"));
+        String first = """
+                {"userId": %d, "name":"계란", "amount":2, "unit":"개", "location":"냉장", "expiry":"2099-01-01"}
+                """.formatted(user.getId());
+        String second = """
+                {"userId": %d, "name":"계란", "amount":3, "unit":"개", "location":"냉장", "expiry":"2099-02-01"}
+                """.formatted(user.getId());
+        mockMvc.perform(post("/api/inventory").contentType(MediaType.APPLICATION_JSON).content(first))
+                .andExpect(status().isCreated());
+        mockMvc.perform(post("/api/inventory").contentType(MediaType.APPLICATION_JSON).content(second))
+                .andExpect(status().isCreated());
+
+        String cook = """
+                {"userId": %d, "ingredients":[{"name":"계란", "amount":3, "unit":"개"}]}
+                """.formatted(user.getId());
+        mockMvc.perform(post("/api/inventory/cook")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cook))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/inventory")
+                        .param("userId", user.getId().toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].amount").value(2.0))
+                .andExpect(jsonPath("$[0].expiry").value("2099-02-01"));
+    }
 }

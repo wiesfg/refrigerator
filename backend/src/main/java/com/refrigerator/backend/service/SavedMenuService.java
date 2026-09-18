@@ -16,10 +16,16 @@ public class SavedMenuService {
 
     private final SavedMenuRepository savedMenuRepository;
     private final UserRepository userRepository;
+    private final InventoryService inventoryService;
 
-    public SavedMenuService(SavedMenuRepository savedMenuRepository, UserRepository userRepository) {
+    public SavedMenuService(
+            SavedMenuRepository savedMenuRepository,
+            UserRepository userRepository,
+            InventoryService inventoryService
+    ) {
         this.savedMenuRepository = savedMenuRepository;
         this.userRepository = userRepository;
+        this.inventoryService = inventoryService;
     }
 
     @Transactional
@@ -46,6 +52,14 @@ public class SavedMenuService {
             throw new IllegalArgumentException("saved menu not found: " + id);
         }
         savedMenuRepository.deleteById(id);
+    }
+
+    @Transactional
+    public void cook(Long menuId, com.refrigerator.backend.dto.CookRequest request) {
+        User user = findUser(request.userId());
+        savedMenuRepository.findByIdAndUserId(menuId, user.getId())
+                .orElseThrow(() -> new IllegalArgumentException("saved menu not found: " + menuId));
+        inventoryService.cook(user.getId(), request.ingredients());
     }
 
     private User findUser(Long userId) {

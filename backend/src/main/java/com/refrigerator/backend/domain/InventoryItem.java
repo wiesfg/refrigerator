@@ -57,4 +57,16 @@ public class InventoryItem {
     public String getUnit() { return unit; }
     public String getLocation() { return location; }
     public LocalDate getExpiry() { return expiry; }
+
+    public void update(String name, double amount, String unit, String location, LocalDate expiry) {
+        this.name = name;
+        this.amount = amount;
+        this.unit = unit;
+        this.location = location;
+        this.expiry = expiry;
+    }
+
+    public void decrease(double amount) {
+        this.amount -= amount;
+    }
 }

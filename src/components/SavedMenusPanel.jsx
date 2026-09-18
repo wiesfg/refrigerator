@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { deleteSavedMenu, getSavedMenus } from '../api/chatApi';
 
-export default function SavedMenusPanel() {
+export default function SavedMenusPanel({ onCook }) {
   const [menus, setMenus] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
@@ -64,6 +64,9 @@ export default function SavedMenusPanel() {
           {menus.map((menu) => (
             <div className="saved-menu-item" key={menu.id}>
               <span>{menu.menu_name}</span>
+              <button type="button" className="btn-secondary" onClick={() => onCook(menu)}>
+                🍳 요리 완료
+              </button>
               <button type="button" className="btn-delete" onClick={() => handleDelete(menu.id)}>
                 ✕
               </button>

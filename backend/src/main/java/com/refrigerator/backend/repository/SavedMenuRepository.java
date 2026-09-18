@@ -10,4 +10,6 @@ public interface SavedMenuRepository extends JpaRepository<SavedMenu, Long> {
     List<SavedMenu> findByUserIdOrderBySavedAtDesc(Long userId);
 
     Optional<SavedMenu> findByUserIdAndMenuName(Long userId, String menuName);
+
+    Optional<SavedMenu> findByIdAndUserId(Long id, Long userId);
 }

@@ -11,4 +11,8 @@ public interface InventoryItemRepository extends JpaRepository<InventoryItem, Lo
             Long userId,
             LocalDate expiry
     );
+
+    java.util.Optional<InventoryItem> findByIdAndUserId(Long id, Long userId);
+
+    List<InventoryItem> findByUserIdAndNameAndUnitOrderByExpiryAsc(Long userId, String name, String unit);
 }

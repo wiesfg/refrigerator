@@ -1,6 +1,14 @@
 import { useState, useEffect } from 'react';
 import ChatPanel from './components/ChatPanel';
 import SavedMenusPanel from './components/SavedMenusPanel';
+import {
+  createInventoryItem,
+  cookInventory,
+  cookSavedMenu,
+  deleteInventoryItem,
+  getInventory,
+  updateInventoryItem,
+} from './api/chatApi';
 import './App.css';
 
 const STORAGE_KEY = 'refrigerator_items_v2';
@@ -66,6 +74,7 @@ export default function App() {
 
   const [filterLocation, setFilterLocation] = useState('전체');
   const [searchTerm, setSearchTerm] = useState('');
+  const [isInventoryLoaded, setIsInventoryLoaded] = useState(false);
 
   const [form, setForm] = useState({
     name: '',
@@ -78,6 +87,28 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
   }, [items]);
+
+  useEffect(() => {
+    let active = true;
+    getInventory()
+      .then((serverItems) => {
+        if (!active) return;
+        if (serverItems.length > 0) {
+          setItems(serverItems);
+        } else {
+          Promise.all(DEFAULT_ITEMS.map((item) => createInventoryItem({ ...item, id: undefined })))
+            .then((createdItems) => {
+              if (active) setItems(createdItems);
+            })
+            .catch(() => {});
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (active) setIsInventoryLoaded(true);
+      });
+    return () => { active = false; };
+  }, []);
 
   // D-Day 계산
   const getDDay = (expiryStr) => {
@@ -92,7 +123,7 @@ export default function App() {
   };
 
   // 재료 추가
-  const handleAddItem = (e) => {
+  const handleAddItem = async (e) => {
     e.preventDefault();
     if (!form.name.trim() || !form.amount || !form.expiry) {
       return alert('재료명, 수량, 유통기한을 모두 입력해주세요!');
@@ -107,12 +138,18 @@ export default function App() {
       expiry: form.expiry,
     };
 
-    setItems([...items, newItem]);
+    if (!isInventoryLoaded) return;
+    try {
+      const savedItem = await createInventoryItem(newItem);
+      setItems([...items, savedItem]);
+    } catch {
+      alert('재료를 서버에 저장하지 못했습니다. 백엔드가 실행 중인지 확인해 주세요.');
+    }
     setForm({ name: '', amount: '', unit: '개', location: '냉장', expiry: '' });
   };
 
   // 개별 수량 조절 (+ / - 버튼)
-  const handleUpdateAmount = (id, delta) => {
+  const handleUpdateAmount = async (id, delta) => {
     const target = items.find((i) => i.id === id);
     if (!target) return;
 
@@ -122,27 +159,65 @@ export default function App() {
 
     if (newAmount <= 0) {
       if (confirm(`'${target.name}'을(를) 모두 사용하여 목록에서 삭제할까요?`)) {
+        await deleteInventoryItem(id);
         setItems(items.filter((item) => item.id !== id));
       }
       return;
     }
 
-    setItems(
-      items.map((item) =>
-        item.id === id ? { ...item, amount: newAmount } : item
-      )
-    );
+    try {
+      const updated = await updateInventoryItem(id, { amount: newAmount });
+      setItems(items.map((item) => item.id === id ? updated : item));
+    } catch {
+      alert('재료 수량을 저장하지 못했습니다.');
+    }
   };
 
   // 재료 삭제
-  const handleDeleteItem = (id) => {
-    setItems(items.filter((item) => item.id !== id));
+  const handleDeleteItem = async (id) => {
+    try {
+      await deleteInventoryItem(id);
+      setItems(items.filter((item) => item.id !== id));
+    } catch {
+      alert('재료를 삭제하지 못했습니다.');
+    }
   };
 
   // 샘플 데이터 복구
-  const handleResetData = () => {
-    if (confirm('샘플 재료 데이터로 초기화하시겠습니까?')) {
-      setItems(DEFAULT_ITEMS);
+  const handleResetData = async () => {
+    if (!confirm('샘플 재료 데이터로 초기화하시겠습니까?')) return;
+    if (!isInventoryLoaded) return;
+    try {
+      await Promise.all(items.map((item) => deleteInventoryItem(item.id)));
+      const createdItems = await Promise.all(
+        DEFAULT_ITEMS.map((item) => createInventoryItem(
+          Object.fromEntries(Object.entries(item).filter(([key]) => key !== 'id'))
+        ))
+      );
+      setItems(createdItems);
+    } catch {
+      alert('재료 초기화에 실패했습니다. 백엔드가 실행 중인지 확인해 주세요.');
+    }
+  };
+
+  const refreshInventory = async () => {
+    const serverItems = await getInventory();
+    setItems(serverItems);
+  };
+
+  const handleCookSavedMenu = async (menu) => {
+    const input = window.prompt(
+      `[${menu.menu_name}]에 사용할 재료를 JSON 배열로 입력해주세요.\n예: [{"name":"계란","amount":2,"unit":"개"}]`
+    );
+    if (input === null) return;
+    try {
+      const ingredients = JSON.parse(input);
+      if (!Array.isArray(ingredients) || ingredients.length === 0) throw new Error();
+      await cookSavedMenu(menu.id, { ingredients });
+      await refreshInventory();
+      alert('요리 완료 처리되어 재고를 차감했습니다.');
+    } catch {
+      alert('재료 JSON 형식이 잘못되었거나 재고가 부족합니다.');
     }
   };
 
@@ -164,26 +239,9 @@ export default function App() {
       return;
     }
 
-    let updated = [...items];
-
-    recipe.ingredients.forEach((reqIng) => {
-      const targetIdx = updated.findIndex((i) => i.name === reqIng.name);
-      if (targetIdx !== -1) {
-        const currentItem = updated[targetIdx];
-        const remainAmount = currentItem.amount - reqIng.amount;
-
-        if (remainAmount <= 0) {
-          updated.splice(targetIdx, 1);
-        } else {
-          updated[targetIdx] = {
-            ...currentItem,
-            amount: remainAmount,
-          };
-        }
-      }
-    });
-
-    setItems(updated);
+    cookInventory({ ingredients: recipe.ingredients })
+      .then(refreshInventory)
+      .catch(() => alert('재고가 부족하거나 서버에 연결할 수 없습니다.'));
   };
 
   // 필터 및 검색
@@ -235,7 +293,7 @@ export default function App() {
       </section>
 
       <ChatPanel ingredients={currentItemNames} />
-      <SavedMenusPanel />
+      <SavedMenusPanel onCook={handleCookSavedMenu} />
 
       <main className="main-grid">
         {/* 좌측: 재료 관리 */}
