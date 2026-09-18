@@ -11,6 +11,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import com.refrigerator.backend.repository.UserPreferenceRepository;
+import com.refrigerator.backend.repository.UserRepository;
+import com.refrigerator.backend.domain.User;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -21,6 +23,9 @@ class ChatControllerTest {
 
     @Autowired
     private UserPreferenceRepository userPreferenceRepository;
+
+    @Autowired
+    private UserRepository userRepository;
 
     @Test
     void chatExtractsPreferenceAndReturnsMenuRecommendation() throws Exception {
@@ -90,5 +95,41 @@ class ChatControllerTest {
         mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/inventory"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].name").value("두부"));
+    }
+
+    @Test
+    void recommendationReusesSavedAnswersWhenLaterAnswersAreOmitted() throws Exception {
+        User user = userRepository.save(new User("memory-test-user"));
+        String firstRequest = """
+                {
+                  "userId": %d,
+                  "religiousAnswer": "돼지고기는 먹지 않아요.",
+                  "vegetarianAnswer": "채식주의자는 아니에요.",
+                  "cuisineAnswer": "한식이 좋아요."
+                }
+                """.formatted(user.getId());
+
+        mockMvc.perform(post("/api/recommendations")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(firstRequest))
+                .andExpect(status().isOk());
+
+        String secondRequest = """
+                {
+                  "userId": %d,
+                  "cuisineAnswer": "중식이 먹고 싶어요."
+                }
+                """.formatted(user.getId());
+
+        mockMvc.perform(post("/api/recommendations")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(secondRequest))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.options.length()").value(4));
+
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "중식이 먹고 싶어요.",
+                userPreferenceRepository.findByUserId(user.getId()).orElseThrow().getPreferredCuisine()
+        );
     }
 }

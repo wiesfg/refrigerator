@@ -37,25 +37,51 @@ public class RecommendationService {
 
     @Transactional
     public RecommendationResponse recommend(RecommendationRequest request) {
-        validate(request);
+        if (request == null) {
+            throw new IllegalArgumentException("recommendation request is required");
+        }
 
         User user = findOrCreateUser(request.userId());
-        saveGuidedAnswers(user, request);
+        UserPreference preference = findOrCreatePreference(user);
+        RecommendationRequest effectiveRequest = mergeWithSavedAnswers(request, preference);
+        saveGuidedAnswers(preference, effectiveRequest);
         List<InventoryItem> inventory = resolveInventory(user);
-        return llmClient.recommendMenus(request, inventory)
+        return llmClient.recommendMenus(effectiveRequest, inventory)
                 .map(options -> new RecommendationResponse("menu_options", options))
-                .orElseGet(() -> mockRecommendation(inventory, request.ingredients()));
+                .orElseGet(() -> mockRecommendation(inventory, effectiveRequest.ingredients()));
     }
 
-    private void saveGuidedAnswers(User user, RecommendationRequest request) {
-        UserPreference preference = userPreferenceRepository.findByUserId(user.getId())
-                .orElseGet(() -> new UserPreference(user));
+    private void saveGuidedAnswers(UserPreference preference, RecommendationRequest request) {
         preference.updateGuidedAnswers(
                 request.religiousAnswer().trim(),
                 request.vegetarianAnswer().trim(),
                 request.cuisineAnswer().trim()
         );
         userPreferenceRepository.save(preference);
+    }
+
+    private UserPreference findOrCreatePreference(User user) {
+        return userPreferenceRepository.findByUserId(user.getId())
+                .orElseGet(() -> new UserPreference(user));
+    }
+
+    private RecommendationRequest mergeWithSavedAnswers(
+            RecommendationRequest request,
+            UserPreference preference
+    ) {
+        String religious = chooseAnswer(request.religiousAnswer(), preference.getReligiousRestriction());
+        String vegetarian = chooseAnswer(request.vegetarianAnswer(), preference.getVegetarianType());
+        String cuisine = chooseAnswer(request.cuisineAnswer(), preference.getPreferredCuisine());
+        if (!StringUtils.hasText(religious) || !StringUtils.hasText(vegetarian) || !StringUtils.hasText(cuisine)) {
+            throw new IllegalArgumentException(
+                    "religiousAnswer, vegetarianAnswer, and cuisineAnswer are required for the first recommendation"
+            );
+        }
+        return new RecommendationRequest(request.userId(), religious, vegetarian, cuisine, request.ingredients());
+    }
+
+    private String chooseAnswer(String current, String saved) {
+        return StringUtils.hasText(current) ? current.trim() : saved;
     }
 
     private RecommendationResponse mockRecommendation(List<InventoryItem> inventory, List<String> requestedIngredients) {
@@ -95,18 +121,4 @@ public class RecommendationService {
                 .orElseGet(() -> userRepository.save(new User("demo-user")));
     }
 
-    private void validate(RecommendationRequest request) {
-        if (request == null) {
-            throw new IllegalArgumentException("recommendation request is required");
-        }
-        if (!StringUtils.hasText(request.religiousAnswer())) {
-            throw new IllegalArgumentException("religiousAnswer is required");
-        }
-        if (!StringUtils.hasText(request.vegetarianAnswer())) {
-            throw new IllegalArgumentException("vegetarianAnswer is required");
-        }
-        if (!StringUtils.hasText(request.cuisineAnswer())) {
-            throw new IllegalArgumentException("cuisineAnswer is required");
-        }
-    }
 }
