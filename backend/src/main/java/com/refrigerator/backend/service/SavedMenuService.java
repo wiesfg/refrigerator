@@ -40,6 +40,14 @@ public class SavedMenuService {
                 .stream().map(SavedMenuResponse::from).toList();
     }
 
+    @Transactional
+    public void delete(Long id) {
+        if (!savedMenuRepository.existsById(id)) {
+            throw new IllegalArgumentException("saved menu not found: " + id);
+        }
+        savedMenuRepository.deleteById(id);
+    }
+
     private User findUser(Long userId) {
         if (userId != null) {
             return userRepository.findById(userId)

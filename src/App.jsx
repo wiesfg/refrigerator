@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import ChatPanel from './components/ChatPanel';
+import SavedMenusPanel from './components/SavedMenusPanel';
 import './App.css';
 
 const STORAGE_KEY = 'refrigerator_items_v2';
@@ -234,6 +235,7 @@ export default function App() {
       </section>
 
       <ChatPanel ingredients={currentItemNames} />
+      <SavedMenusPanel />
 
       <main className="main-grid">
         {/* 좌측: 재료 관리 */}

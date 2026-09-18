@@ -190,4 +190,22 @@ class ChatControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].menu_name").value("두부 된장찌개"));
     }
+
+    @Test
+    void selectedMenuCanBeDeleted() throws Exception {
+        User user = userRepository.save(new User("delete-menu-user"));
+        String body = """
+                { "userId": %d, "menuName": "김치볶음밥" }
+                """.formatted(user.getId());
+
+        String response = mockMvc.perform(post("/api/saved-menus")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        long id = new com.fasterxml.jackson.databind.ObjectMapper().readTree(response).get("id").asLong();
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/saved-menus/{id}", id))
+                .andExpect(status().isNoContent());
+    }
 }

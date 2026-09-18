@@ -6,6 +6,8 @@ import com.refrigerator.backend.service.SavedMenuService;
 import java.util.List;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -30,5 +32,11 @@ public class SavedMenuController {
     @GetMapping
     public ResponseEntity<List<SavedMenuResponse>> list(@RequestParam(required = false) Long userId) {
         return ResponseEntity.ok(savedMenuService.list(userId));
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable Long id) {
+        savedMenuService.delete(id);
+        return ResponseEntity.noContent().build();
     }
 }
