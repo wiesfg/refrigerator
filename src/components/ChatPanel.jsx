@@ -31,6 +31,30 @@ export default function ChatPanel({ ingredients }) {
   const [userId, setUserId] = useState(null);
   const [isSending, setIsSending] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [selectedMenus, setSelectedMenus] = useState({});
+  const [confirmedMenus, setConfirmedMenus] = useState({});
+
+  const toggleMenu = (messageId, menuName) => {
+    setSelectedMenus((current) => {
+      const selected = current[messageId] ?? [];
+      const next = selected.includes(menuName)
+        ? selected.filter((name) => name !== menuName)
+        : [...selected, menuName];
+      return { ...current, [messageId]: next };
+    });
+  };
+
+  const confirmMenus = (message) => {
+    const selected = selectedMenus[message.id] ?? [];
+    if (selected.length === 0 || confirmedMenus[message.id]) return;
+
+    setConfirmedMenus((current) => ({ ...current, [message.id]: true }));
+    setMessages((current) => [
+      ...current,
+      { id: Date.now(), role: 'user', text: `선택한 메뉴: ${selected.join(', ')}` },
+      { id: Date.now() + 1, role: 'assistant', text: '선택한 메뉴를 확인했어요. 맛있게 드세요!' },
+    ]);
+  };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -110,11 +134,27 @@ export default function ChatPanel({ ingredients }) {
             {message.options ? (
               <div className="chat-menu-options">
                 <p>추천 메뉴</p>
-                <ul>
+                <div className="chat-menu-checkboxes">
                   {message.options.map((option) => (
-                    <li key={option.menu_name}>{option.menu_name}</li>
+                    <label key={option.menu_name}>
+                      <input
+                        type="checkbox"
+                        checked={(selectedMenus[message.id] ?? []).includes(option.menu_name)}
+                        disabled={confirmedMenus[message.id]}
+                        onChange={() => toggleMenu(message.id, option.menu_name)}
+                      />
+                      <span>{option.menu_name}</span>
+                    </label>
                   ))}
-                </ul>
+                </div>
+                <button
+                  type="button"
+                  className="btn-primary menu-confirm-button"
+                  disabled={confirmedMenus[message.id] || !(selectedMenus[message.id] ?? []).length}
+                  onClick={() => confirmMenus(message)}
+                >
+                  {confirmedMenus[message.id] ? '선택 완료' : '선택한 메뉴 확인'}
+                </button>
               </div>
             ) : (
               message.text.split('\n').map((line, index) => (
