@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import ChatPanel from './components/ChatPanel';
 import './App.css';
 
 const STORAGE_KEY = 'refrigerator_items_v2';
@@ -417,7 +418,9 @@ export default function App() {
         </div>
       </aside>
 
-     
+      <main className="conversation-main">
+        <ChatPanel ingredients={items.map((item) => item.name)} />
+      </main>
 
       {/* 영수증 스캔 모달 */}
       {isScanModalOpen && (
