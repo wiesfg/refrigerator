@@ -235,7 +235,7 @@ export default function App() {
         </div>
 
         <div className="header-actions">
-          <button onClick={() => setIsScanModalOpen(true)} className="btn-scan">
+          <button type="button" onClick={() => setIsScanModalOpen(true)} className="btn-scan">
             📷 스캔
           </button>
           <button onClick={handleResetData} className="btn-secondary">
