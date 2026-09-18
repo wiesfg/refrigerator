@@ -62,12 +62,11 @@ export default function ChatPanel({ ingredients }) {
 
   return (
     <section className="panel chat-panel">
-      <div className="panel-header">
-        <div>
-          <h2>AI 메뉴 상담</h2>
-          <p className="panel-description">취향과 보유 재료를 바탕으로 메뉴명을 추천합니다.</p>
-        </div>
+      <div className="chat-hero-brand">
+        <img src="/refrigerator-mascot.png" alt="냉장고 도우미" />
       </div>
+      <h2 className="chat-hero-title">오늘은 어떤 메뉴가<br /><span>끌리시나요?</span></h2>
+      <p className="chat-hero-description">냉장고 속 재료를 바탕으로 딱 맞는 메뉴를 추천해드릴게요.</p>
 
       <div className="chat-ingredient-row">
         {ingredients.length === 0 ? (
