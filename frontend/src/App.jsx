@@ -244,8 +244,6 @@ export default function App() {
   });
 
   const totalStockCount = items.length;
-  const urgentCount = items.filter((item) => getDDay(item.expiry).isDanger).length;
-
   return (
     <div className="app-container">
       {/* 상단 통합 헤더 */}
