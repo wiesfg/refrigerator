@@ -1,71 +1,96 @@
 import { useState } from 'react';
-import { sendChatMessage } from '../api/chatApi';
-import MenuCard from './MenuCard';
+import { requestRecommendations } from '../api/chatApi';
+
+const QUESTIONS = [
+  {
+    key: 'religiousAnswer',
+    text: '종교적인 이유로 피하는 음식이나 식사 기준이 있나요?',
+    placeholder: '예: 돼지고기는 먹지 않아요 / 없어요',
+  },
+  {
+    key: 'vegetarianAnswer',
+    text: '채식주의자인가요? 해당한다면 어떤 유형인가요?',
+    placeholder: '예: 채식주의자는 아니에요 / 비건이에요',
+  },
+  {
+    key: 'cuisineAnswer',
+    text: '지금 어떤 종류의 음식이 끌리나요?',
+    placeholder: '예: 매콤한 한식이 먹고 싶어요',
+  },
+];
 
 const INITIAL_MESSAGES = [
-  {
-    id: 1,
-    role: 'assistant',
-    text: '먹고 싶은 스타일이나 피하고 싶은 재료를 말해줘. 지금 냉장고 재료를 같이 보고 메뉴만 추천해줄게.',
-  },
+  { id: 1, role: 'assistant', text: QUESTIONS[0].text },
 ];
 
 export default function ChatPanel({ ingredients }) {
   const [messages, setMessages] = useState(INITIAL_MESSAGES);
   const [input, setInput] = useState('');
+  const [answers, setAnswers] = useState({});
+  const [questionIndex, setQuestionIndex] = useState(0);
   const [userId, setUserId] = useState(null);
   const [isSending, setIsSending] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-
     const trimmedInput = input.trim();
     if (!trimmedInput || isSending) return;
 
-    const userMessage = {
-      id: Date.now(),
-      role: 'user',
-      text: trimmedInput,
-    };
+    const question = QUESTIONS[questionIndex];
+    const nextAnswers = { ...answers, [question.key]: trimmedInput };
+    const nextMessages = [
+      ...messages,
+      { id: Date.now(), role: 'user', text: trimmedInput },
+    ];
 
-    setMessages((current) => [...current, userMessage]);
+    setAnswers(nextAnswers);
     setInput('');
-    setIsSending(true);
     setErrorMessage('');
 
+    if (questionIndex < QUESTIONS.length - 1) {
+      const nextIndex = questionIndex + 1;
+      setQuestionIndex(nextIndex);
+      setMessages([
+        ...nextMessages,
+        { id: Date.now() + 1, role: 'assistant', text: QUESTIONS[nextIndex].text },
+      ]);
+      return;
+    }
+
+    setMessages(nextMessages);
+    setIsSending(true);
+
     try {
-      const result = await sendChatMessage({
+      const result = await requestRecommendations({
         userId,
-        message: trimmedInput,
+        answers: nextAnswers,
         ingredients,
       });
 
-      setUserId(result.userId);
+      setUserId(result.userId ?? userId);
       setMessages((current) => [
         ...current,
-        {
-          id: Date.now() + 1,
-          role: 'assistant',
-          recommendation: {
-            menuName: result.menu_name,
-            reason: result.reason,
-          },
-        },
+        { id: Date.now() + 1, role: 'assistant', options: result.options ?? [] },
       ]);
-    } catch {
-      setErrorMessage('추천을 가져오지 못했어요. Spring Boot 서버가 실행 중인지 확인해 주세요.');
+      setQuestionIndex(QUESTIONS.length);
+    } catch (error) {
+      setErrorMessage(error.response?.status === 409
+        ? '냉장고에 소비기한이 지나지 않은 재료를 먼저 등록해 주세요.'
+        : '추천을 가져오지 못했어요. Spring Boot 서버가 실행 중인지 확인해 주세요.');
     } finally {
       setIsSending(false);
     }
   };
+
+  const currentQuestion = QUESTIONS[questionIndex];
 
   return (
     <section className="panel chat-panel">
       <div className="panel-header">
         <div>
           <h2>AI 메뉴 상담</h2>
-          <p className="panel-description">취향과 보유 재료를 바탕으로 메뉴명을 추천합니다.</p>
+          <p className="panel-description">세 가지 질문에 답하면 냉장고 재료로 메뉴 4개를 추천합니다.</p>
         </div>
       </div>
 
@@ -74,24 +99,23 @@ export default function ChatPanel({ ingredients }) {
           <span className="chat-ingredient-empty">등록된 재료가 없습니다.</span>
         ) : (
           ingredients.map((ingredient) => (
-            <span key={ingredient} className="chat-ingredient-chip">
-              {ingredient}
-            </span>
+            <span key={ingredient} className="chat-ingredient-chip">{ingredient}</span>
           ))
         )}
       </div>
 
       <div className="chat-messages" aria-live="polite">
         {messages.map((message) => (
-          <div
-            key={message.id}
-            className={`chat-bubble ${message.role} ${message.recommendation ? 'with-menu-card' : ''}`}
-          >
-            {message.recommendation ? (
-              <MenuCard
-                menuName={message.recommendation.menuName}
-                reason={message.recommendation.reason}
-              />
+          <div key={message.id} className={`chat-bubble ${message.role}`}>
+            {message.options ? (
+              <div className="chat-menu-options">
+                <p>추천 메뉴</p>
+                <ul>
+                  {message.options.map((option) => (
+                    <li key={option.menu_name}>{option.menu_name}</li>
+                  ))}
+                </ul>
+              </div>
             ) : (
               message.text.split('\n').map((line, index) => (
                 <span key={`${line}-${index}`}>{line}</span>
@@ -100,26 +124,27 @@ export default function ChatPanel({ ingredients }) {
           </div>
         ))}
         {isSending && (
-          <div className="chat-bubble assistant">
-            <span>메뉴를 고르는 중...</span>
-          </div>
+          <div className="chat-bubble assistant"><span>냉장고 재료를 확인하는 중...</span></div>
         )}
       </div>
 
       {errorMessage && <p className="chat-error">{errorMessage}</p>}
 
-      <form className="chat-form" onSubmit={handleSubmit}>
-        <input
-          type="text"
-          value={input}
-          onChange={(event) => setInput(event.target.value)}
-          placeholder="예: 다이어트 중이고 매운맛 좋아해"
-          disabled={isSending}
-        />
-        <button type="submit" className="btn-primary" disabled={isSending || !input.trim()}>
-          전송
-        </button>
-      </form>
+      {currentQuestion && (
+        <form className="chat-form" onSubmit={handleSubmit}>
+          <input
+            type="text"
+            value={input}
+            onChange={(event) => setInput(event.target.value)}
+            placeholder={currentQuestion.placeholder}
+            disabled={isSending}
+            aria-label={currentQuestion.text}
+          />
+          <button type="submit" className="btn-primary" disabled={isSending || !input.trim()}>
+            전송
+          </button>
+        </form>
+      )}
     </section>
   );
 }

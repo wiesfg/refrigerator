@@ -108,7 +108,7 @@ public class LlmClient {
                 request.religiousAnswer(),
                 request.vegetarianAnswer(),
                 request.cuisineAnswer(),
-                formatInventory(inventory)
+                formatInventory(inventory, request.ingredients())
         );
 
         return callChatCompletion(prompt)
@@ -117,8 +117,13 @@ public class LlmClient {
                         option != null && option.menuName() != null && !option.menuName().isBlank()));
     }
 
-    private String formatInventory(List<InventoryItem> inventory) {
+    private String formatInventory(List<InventoryItem> inventory, List<String> requestedIngredients) {
         if (inventory == null || inventory.isEmpty()) {
+            if (requestedIngredients != null && !requestedIngredients.isEmpty()) {
+                return requestedIngredients.stream().map(name -> "- " + name)
+                        .reduce((left, right) -> left + "\n" + right)
+                        .orElse("No available non-expired ingredients");
+            }
             return "No available non-expired ingredients";
         }
         return inventory.stream()
