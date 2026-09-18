@@ -112,65 +112,20 @@ export default function App() {
 
   // Gemini 영수증 OCR 분석
   const analyzeReceiptWithGemini = async (base64Data, mimeType) => {
-    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-    if (!apiKey) throw new Error('API_KEY_MISSING');
-
-    const todayStr = new Date().toISOString().split('T')[0];
-    const prompt = `
-이 이미지는 식재료 사진 또는 영수증 이미지입니다.
-이미지에서 실제 식재료 이름과 구매/소비 수량을 추출해 주세요.
-다음 우선순위로 판단하세요:
-1) 식재료 사진이면, 보이는 품목명과 개수(예: 2개, 300g, 1봉지, 1모)를 추출하세요.
-2) 영수증이면, 식재료/농산물/육류/유제품/가공식품 등 실제 식재료만 추출하고, 공산품·잡화·결제정보는 제외하세요.
-3) 수량을 정확히 알 수 없으면 1로 추정하되, 사진에 표시된 숫자가 있으면 그 숫자를 우선 사용하세요.
-4) 식재료의 일반적인 유통기한을 추정하여 expiry(YYYY-MM-DD)를 산출해 주세요.
-5) 결과는 순서대로 표기하며, 중복된 식재료는 하나로 합쳐 주세요.
-
-오늘 날짜는 ${todayStr} 입니다.
-반드시 다른 설명 없이 아래 JSON 배열 형식으로만 응답해 주세요:
-[
-  {
-    "name": "식재료명",
-    "amount": 숫자,
-    "unit": "개" | "g" | "ml" | "모" | "봉지",
-    "location": "냉장" | "냉동" | "실온",
-    "expiry": "YYYY-MM-DD"
-  }
-]
-`;
-
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                { text: prompt },
-                {
-                  inline_data: {
-                    mime_type: mimeType,
-                    data: base64Data,
-                  },
-                },
-              ],
-            },
-          ],
-        }),
-      }
-    );
+    const response = await fetch('/api/ai/receipt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageBase64: base64Data, mimeType }),
+    });
 
     if (!response.ok) {
       const errBody = await response.json().catch(() => ({}));
-      throw new Error(errBody.error?.message || `API 요청 실패 (${response.status})`);
+      throw new Error(errBody.error || `AI 서버 요청 실패 (${response.status})`);
     }
 
-    const resJson = await response.json();
-    const rawText = resJson.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
-    const cleanJsonText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
-    return JSON.parse(cleanJsonText);
+    const parsedItems = await response.json();
+    if (!Array.isArray(parsedItems)) throw new Error('AI 응답 형식이 올바르지 않습니다.');
+    return parsedItems;
   };
 
   const handleFileChange = async (e) => {
@@ -182,13 +137,27 @@ export default function App() {
     setScanStatusText('Gemini AI가 이미지에서 재료명과 수량을 분석 중입니다...');
     setScannedResults([]);
 
+    if (!['image/jpeg', 'image/png', 'image/webp', 'image/heic'].includes(file.type)) {
+      alert('JPG, PNG, WEBP, HEIC 이미지 파일만 업로드할 수 있습니다.');
+      e.target.value = '';
+      setIsScanning(false);
+      return;
+    }
+
+    const inputElement = e.target;
     const reader = new FileReader();
+    reader.onerror = () => {
+      setIsScanning(false);
+      setScanStatusText('이미지를 읽지 못했습니다. 다시 시도해주세요.');
+      inputElement.value = '';
+    };
     reader.onload = async (event) => {
       const dataUrl = event.target.result;
       setPreviewImage(dataUrl);
 
       try {
         const base64Data = dataUrl.split(',')[1];
+        if (!base64Data) throw new Error('이미지 데이터를 읽지 못했습니다.');
         const mimeType = file.type || 'image/jpeg';
         const parsedItems = await analyzeReceiptWithGemini(base64Data, mimeType);
 
@@ -208,7 +177,7 @@ export default function App() {
         alert(`AI 분석 중 오류가 발생했습니다: ${err.message}`);
       } finally {
         setIsScanning(false);
-        e.target.value = '';
+        inputElement.value = '';
       }
     };
     reader.readAsDataURL(file);
