@@ -18,6 +18,9 @@ server/data/
 *.sqlite-shm
 *.sqlite-wal
 
+# Java / Spring Boot
+backend/target/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
