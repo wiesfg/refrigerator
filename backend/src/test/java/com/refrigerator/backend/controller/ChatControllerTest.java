@@ -36,4 +36,27 @@ class ChatControllerTest {
                 .andExpect(jsonPath("$.preference.diet_type").value("다이어트"))
                 .andExpect(jsonPath("$.preference.preferred_taste").value("매운맛"));
     }
+
+    @Test
+    void structuredRecommendationReturnsFourMenuOptions() throws Exception {
+        String body = """
+                {
+                  "religiousAnswer": "돼지고기는 먹지 않아요.",
+                  "vegetarianAnswer": "채식주의자는 아니에요.",
+                  "cuisineAnswer": "매콤한 한식이 먹고 싶어요.",
+                  "ingredients": ["계란", "두부", "김치"]
+                }
+                """;
+
+        mockMvc.perform(post("/api/recommendations")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message_type").value("menu_options"))
+                .andExpect(jsonPath("$.options.length()").value(4))
+                .andExpect(jsonPath("$.options[0].menu_name").isString())
+                .andExpect(jsonPath("$.options[1].menu_name").isString())
+                .andExpect(jsonPath("$.options[2].menu_name").isString())
+                .andExpect(jsonPath("$.options[3].menu_name").isString());
+    }
 }
