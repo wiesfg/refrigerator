@@ -11,6 +11,15 @@ node_modules
 dist
 dist-ssr
 *.local
+.env
+server/.env
+server/data/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# Java / Spring Boot
+backend/target/
 
 # Editor directories and files
 .vscode/*

@@ -107,6 +107,138 @@ header {
   color: #1e293b;
 }
 
+.panel-description {
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.chat-panel {
+  margin-bottom: 24px;
+}
+
+.chat-ingredient-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.chat-ingredient-chip,
+.chat-ingredient-empty {
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: #f1f5f9;
+  color: #475569;
+  font-weight: 600;
+}
+
+.chat-ingredient-empty {
+  color: #94a3b8;
+}
+
+.chat-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.chat-bubble {
+  display: flex;
+  flex-direction: column;
+  max-width: 78%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: 14px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.chat-bubble.assistant {
+  align-self: flex-start;
+  background: #ffffff;
+  color: #1e293b;
+  border: 1px solid #e2e8f0;
+}
+
+.chat-bubble.assistant.with-menu-card {
+  width: min(360px, 100%);
+  max-width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+
+.chat-bubble.user {
+  align-self: flex-end;
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.chat-form {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.chat-form input {
+  width: 100%;
+}
+
+.chat-form button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.chat-error {
+  margin-top: 10px;
+  color: #dc2626;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.menu-card {
+  width: 100%;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid #bfdbfe;
+  background: #ffffff;
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.08);
+}
+
+.menu-card-label {
+  display: inline-flex;
+  margin-bottom: 10px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.menu-card h3 {
+  margin: 0 0 8px;
+  color: #0f172a;
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.menu-card p {
+  margin: 0;
+  color: #475569;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
 /* 추가 폼 */
 .form-box {
   background: #f8fafc;

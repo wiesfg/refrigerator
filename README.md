@@ -1,16 +1,26 @@
-# React + Vite
+# Refrigerator
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+냉장고 재고를 관리하고 보유 재료에 맞는 레시피를 찾는 해커톤 프로젝트입니다. 프런트엔드는 React/Vite, 백엔드는 Node.js 내장 HTTP 서버와 SQLite를 사용합니다.
 
-Currently, two official plugins are available:
+## 로컬 실행
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Node.js 24 이상이 필요합니다. 터미널 두 개에서 각각 실행하세요.
 
-## React Compiler
+```bash
+npm install
+npm run server
+```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+```bash
+npm run dev
+```
 
-## Expanding the ESLint configuration
+Vite는 `/api` 요청을 `http://127.0.0.1:3001`의 백엔드로 전달합니다. 서버 상태는 `http://127.0.0.1:3001/api/health`에서 확인할 수 있습니다. SQLite 파일은 `server/data/refrigerator.sqlite`에 생성되며 Git에 올라가지 않습니다.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+외부 API를 사용하려면 `server/.env.example`을 `server/.env`로 복사하고 키를 입력하세요. 실제 키는 Git에 커밋하지 마세요. 백엔드 API와 프런트엔드 연결 방법은 [server/README.md](server/README.md)에 있습니다.
+
+```bash
+npm run test:server
+npm run lint
+npm run build
+```
