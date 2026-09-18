@@ -34,6 +34,44 @@ async function gemini(prompt, image, { apiKey, model = 'gemini-3.6-flash', fetch
   return parseModelJson(text);
 }
 
+async function jbnuVision(prompt, image, {
+  apiKey,
+  baseUrl = 'https://factchat-cloud.mindlogic.ai/v1/gateway',
+  model = 'claude-sonnet-5',
+  fetchImpl = fetch,
+}) {
+  if (!apiKey) throw new InputError('서버에 JBNU_LLM_API_KEY가 설정되지 않았습니다.', 503);
+  const response = await fetchImpl(`${baseUrl.replace(/\/$/, '')}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: 'system', content: 'You extract grocery items from receipt images. Return JSON only.' },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: prompt },
+            { type: 'image_url', image_url: { url: `data:${image.mimeType};base64,${image.base64}` } },
+          ],
+        },
+      ],
+    }),
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!response.ok) throw new InputError(`전북대 LLM 요청이 실패했습니다. (${response.status})`, 502);
+  const data = await response.json();
+  const content = data.choices?.[0]?.message?.content;
+  const text = typeof content === 'string'
+    ? content
+    : Array.isArray(content) ? content.map((part) => part.text ?? '').join('') : '';
+  if (!text) throw new InputError('전북대 LLM이 응답 내용을 반환하지 않았습니다.', 502);
+  return parseModelJson(text);
+}
+
 export async function analyzeReceipt({ imageBase64, mimeType }, options) {
   if (typeof imageBase64 !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(imageBase64) || imageBase64.length > 7_000_000) {
     throw new InputError('7MB 이하의 Base64 이미지가 필요합니다.');
@@ -42,7 +80,7 @@ export async function analyzeReceipt({ imageBase64, mimeType }, options) {
     throw new InputError('지원하지 않는 이미지 형식입니다.');
   }
   const today = new Date().toISOString().slice(0, 10);
-  const result = await gemini(
+  const result = await jbnuVision(
     `마트 영수증에서 구매한 식재료만 추출하세요. 잡화와 결제정보는 제외하세요. 오늘은 ${today}입니다. 소비기한은 추정치입니다. JSON 배열로만 응답하세요. 각 항목은 name, amount(숫자), unit(개/g/ml/모/봉지), location(냉장/냉동/실온), expiry(YYYY-MM-DD)를 포함합니다.`,
     { base64: imageBase64, mimeType }, options,
   );
