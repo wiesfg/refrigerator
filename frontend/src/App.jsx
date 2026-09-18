@@ -237,11 +237,13 @@ export default function App() {
  
 
   // 필터링된 재료 목록
-  const filteredItems = items.filter((item) => {
-    const matchesLoc = filterLocation === '전체' || item.location === filterLocation;
-    const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesLoc && matchesSearch;
-  });
+  const filteredItems = items
+    .filter((item) => {
+      const matchesLoc = filterLocation === '전체' || item.location === filterLocation;
+      const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase());
+      return matchesLoc && matchesSearch;
+    })
+    .sort((a, b) => a.expiry.localeCompare(b.expiry));
 
   const totalStockCount = items.length;
   return (
